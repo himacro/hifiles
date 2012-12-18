@@ -1,0 +1,4 @@
+#!/bin/sh
+
+[[ -e ~/.Xresources ]] && xrdb -merge ~/.Xresources
+exec xterm

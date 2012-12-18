@@ -1,0 +1,70 @@
+c3270.keymap: pma
+c3270.keymap.pma: \
+  Ctrl <Key>h: Left()                \n\
+  Ctrl <Key>j: Down()                \n\
+  Ctrl <Key>k: Up()                  \n\
+  Ctrl <Key>l: Right()               \n\
+  Ctrl <Key>w: NextWord()             \n\
+  Ctrl <Key>b: PreviousWord()         \n\
+  Ctrl <Key>s: Up() Newline()         \n\
+  Ctrl <Key>e: FieldEnd()             \n\
+  Ctrl <Key>x: Delete()               \n\
+  Ctrl <Key>z: DeleteField()         \n\
+  Ctrl <Key>d: EraseEOF()             \n\
+  Ctrl <Key>c: DeleteWord()           \n\
+  Ctrl <Key>r: Reset()                \n\
+  Ctrl <Key>q: MoveCursor(0,0) Newline() \n\
+  Ctrl <Key>g: Home()                 \n\
+  Ctrl <Key>n: Newline()                 \n\
+  Ctrl <Key>p: PF(24)                \n\
+  Ctrl <Key>H: Left()                \n\
+  Ctrl <Key>J: Down()                \n\
+  Ctrl <Key>K: Up()                  \n\
+  Ctrl <Key>L: Right()               \n\
+  Ctrl <Key>W: NextWord()             \n\
+  Ctrl <Key>B: PreviousWord()         \n\
+  Ctrl <Key>S: Up() Newline()         \n\
+  Ctrl <Key>E: FieldEnd()             \n\
+  Ctrl <Key>X: Delete()               \n\
+  Ctrl <Key>Z: DeleteField()         \n\
+  Ctrl <Key>D: EraseEOF()             \n\
+  Ctrl <Key>C: DeleteWord()           \n\
+  Ctrl <Key>R: Reset()                \n\
+  Ctrl <Key>Q: MoveCursor(0,0) Newline() \n\
+  Ctrl <Key>G: Home()                 \n\
+  Ctrl <Key>N: Newline()                 \n\
+  Ctrl <Key>P: PF(24)                \n\
+  Alt<Key>0:  MoveCursor(0,0) Newline() String("Swap list") Enter() \n\
+  Alt<Key>1:  MoveCursor(0,0) Newline() String("Swap 1") Enter() \n\
+  Alt<Key>2:  MoveCursor(0,0) Newline() String("Swap 2") Enter() \n\
+  Alt<Key>3:  MoveCursor(0,0) Newline() String("Swap 3") Enter() \n\
+  Alt<Key>4:  MoveCursor(0,0) Newline() String("Swap 4") Enter() \n\
+  Alt<Key>5:  MoveCursor(0,0) Newline() String("Swap 5") Enter() \n\
+  Alt<Key>6:  MoveCursor(0,0) Newline() String("Swap 6") Enter() \n\
+  <Key>BTAB: BackTab()               \n\
+  Alt Ctrl<Key>M: Newline()       
+
+c3270.cursesColorForHostColor0:  brblack
+c3270.cursesColorForHostColor1:  blue
+c3270.cursesColorForHostColor2:  brred
+c3270.cursesColorForHostColor3:  magenta
+c3270.cursesColorForHostColor4:  green
+c3270.cursesColorForHostColor5:  cyan
+c3270.cursesColorForHostColor6:  yellow
+c3270.cursesColorForHostColor7:  brblue
+c3270.cursesColorForHostColor8:  brblack
+c3270.cursesColorForHostColor9:  blue
+c3270.cursesColorForHostColor10: brred
+c3270.cursesColorForHostColor11: magenta
+c3270.cursesColorForHostColor12: green
+c3270.cursesColorForHostColor13: cyan
+c3270.cursesColorForHostColor14: yellow
+c3270.cursesColorForHostColor15: brblue
+!
+!c3270.cursesColorForBackground:  brblack
+!
+c3270.cursesColorForDefault:     green
+c3270.cursesColorForIntensified: brred
+c3270.cursesColorForProtected:   blue
+c3270.cursesColorForProtectedIntensified: brblue
+! 

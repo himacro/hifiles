@@ -1,0 +1,3 @@
+# vim:filetype=sh
+RCFILE="$HOME/myscripts/set-palette.sh"
+[[ -e $RCFILE ]] && source $RCFILE
