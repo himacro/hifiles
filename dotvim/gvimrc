@@ -1,0 +1,25 @@
+" Colorscheme
+set background=light
+colorscheme solarized
+
+" Font
+if has("win32")
+    set guifont=Consolas:h10
+else
+    set guifont=Inconsolata\ 11
+    set guifontwide=WenQuanYi\ Micro\ Hei\ 10
+endif
+
+" Menu & Toolbar 
+function! s:ToggleMenuToolbar()
+    if &guioptions =~# 'T'
+        set guioptions-=T
+        set guioptions-=m
+    else
+        set guioptions+=T 
+        set guioptions+=m
+    endif
+endf
+
+" set lines=48 columns=160
+

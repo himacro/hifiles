@@ -1,0 +1,115 @@
+digraph {
+    graph[labeljust = l, fontname = "Serif", fontsize = 10];
+    node[ width = 2, shape = box, fontname = "Serif"];
+    edge[fontname = "san", fontsize = 9];
+    
+    psa[label = "PSA"];
+    
+    subgraph cluster_ascbs {
+        node [width = 0.1]
+        ascb1[label = "ASCB"];
+        cur_ascb[label = "ASCB\n(Current)"];
+        ascb3[label = "ASCB"];
+        {rank = "same"; ascb1; cur_ascb; ascb3;}
+        edge [dir = "both"];
+        ascb1 -> cur_ascb -> ascb3;
+    }
+
+    cvt[label = "CVT"];
+
+    subgraph cluster_tcbs {
+        label = "TCB Chain";
+        rct[label = "RCT", width = 3];
+        dump[label = "Dump Task"];
+        stc[label = "STC"];
+        init[label = "Initiator"];
+        cur_task[label = "Job Step Task\n(Current)"];
+
+        {rank = same; stc; dump;}
+        edge[color = red, style = dashed, label = "ATTACH"];
+        rct -> dump;
+        rct -> stc -> init -> cur_task;
+    }
+ 
+    subgraph cluster_tcbs1 {
+        label = "TCB Chain";
+
+        rct1[label = "RCT", width = 3];
+        dump1[label = "Dump Task"];
+        stc1[label = "STC"];
+        init1[label = "Initiator"];
+        step1[label = "Job Step Task"];
+        {rank = same; stc1; dump1;}
+
+        edge[label = "X'DC'\nBACK"];
+        step1 -> init1 -> stc1 -> dump1 -> rct1;
+
+        edge[label = "X'74'\nTCB"];
+        rct1 -> dump1 -> stc1 -> init1;
+        init1 -> step1;
+    }
+
+    subgraph cluster_tcbs0 {
+        label = "TCB Chain";
+
+        rct0[label = "RCT", width = 3];
+        stc0[label = "STC"];
+        init0[label = "Initiator"];
+        dump0[label = "Dump Task"];
+        step0[label = "Job Step Task"];
+        {rank = same; stc0; dump0;}
+
+        edge[label = "X'88'\nLTC"];
+        rct0 -> stc0 -> init0 -> step0;
+
+        edge[label = "X'84'\nOTC", constraint = false];
+        dump0 -> rct0;
+        step0 -> init0 -> stc0 -> rct0;
+    }
+
+
+    subgraph cluster_cdes {
+        label = "CDE Chain";
+        cde1[shape = record, label = "{<cb>CDE|X'08' CDNAME}"];
+        cde2[label = "CDE"];
+        cde3[label = "CDE"];
+        xtlst1[shape = record, label = "{<cb>XTLST|module size}"];
+        {rank = "same"; cde1; cde2; cde3;}
+        cde1 -> cde2 -> cde3;
+        cde1 -> xtlst1[label = "XMLJP"];
+
+    }
+
+
+    subgraph cluster_step_rbs {
+        label = "RB Chain of Job Step Task";
+        cur_prb[label = "PRB"];
+        cur_svrb[label = "SVRB\n(Current)"];
+        {rank = "same"; cur_prb; cur_svrb;}
+        cur_svrb->cur_prb [label = "LINK"];
+    }
+
+
+    module [shape = record, label = "{<b>module start|...|<e>entry n}"];
+
+    cde1 -> module:e;
+    xtlst1 -> module:b;
+
+    psa -> cvt[label = "X'10'\nCVT"];
+    psa -> cur_ascb[label = "X'224'\nAOLD"];
+    psa -> cur_task[label = "X'21C'\nTOLD"];
+    cvt -> cur_task[style = invis];
+    cvt -> cur_ascb[style = invis];
+
+    cur_ascb -> rct[label = "X'7C'\nRCTP"];
+    cur_ascb -> rct0[style = invis];
+    cur_ascb -> rct1[style = invis];
+//    rct -> rct0 -> rct1 [style = dotted, dir = none, color = blue, constraint = false, label = "the same one"];
+
+    cur_task -> cde1[label = "X'2C'\nJPQ"];
+    cur_task -> cur_svrb[label = "X'00'\nRBP"];
+    cur_prb -> cde1[label = "X'0C'\nCDE"];
+}
+
+
+

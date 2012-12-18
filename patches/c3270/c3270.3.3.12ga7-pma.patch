@@ -1,0 +1,223 @@
+diff -ruN c3270-3.3.12ga7/glue.c c3270-3.3.12ga7-pma/glue.c
+--- c3270-3.3.12ga7/glue.c	2012-05-03 16:18:34.351470241 +0800
++++ c3270-3.3.12ga7-pma/glue.c	2012-05-03 16:17:23.997048739 +0800
+@@ -1172,6 +1172,7 @@
+ 	    { ResHostColorForIntensified,	V_FLAT },
+ 	    { ResHostColorForProtected,		V_FLAT },
+ 	    { ResHostColorForProtectedIntensified,V_FLAT },
++	    { ResCursesColorForBackground,	V_FLAT },
+ 	    { ResConsoleColorForHostColor,	V_COLOR },
+ #else /*][*/
+ 	    { ResPrinterCommand,		V_FLAT },
+@@ -1180,6 +1181,7 @@
+ 	    { ResCursesColorForIntensified,	V_FLAT },
+ 	    { ResCursesColorForProtected,	V_FLAT },
+ 	    { ResCursesColorForProtectedIntensified,V_FLAT },
++	    { ResCursesColorForBackground,	V_FLAT },
+ 	    { ResCursesColorForHostColor,	V_COLOR },
+ #endif /*]*/
+ 	    { NULL, V_WILD }
+diff -ruN c3270-3.3.12ga7/keypad.c c3270-3.3.12ga7-pma/keypad.c
+--- c3270-3.3.12ga7/keypad.c	2012-05-03 16:18:34.344803762 +0800
++++ c3270-3.3.12ga7-pma/keypad.c	2012-05-03 16:17:23.480370800 +0800
+@@ -52,7 +52,7 @@
+ # include "windows.h"
+ #endif /*]*/
+ 
+-extern int screen_changed; /* XXX Hack! */
++extern Boolean screen_changed; /* XXX Hack! */
+ 
+ /* Sensitivity map: A rectangular region and a callback function. */
+ typedef struct {
+diff -ruN c3270-3.3.12ga7/menubar.c c3270-3.3.12ga7-pma/menubar.c
+--- c3270-3.3.12ga7/menubar.c	2012-05-03 16:18:34.344803762 +0800
++++ c3270-3.3.12ga7-pma/menubar.c	2012-05-03 16:17:23.370349896 +0800
+@@ -73,7 +73,7 @@
+ # include "windows.h"
+ #endif /*]*/
+ 
+-extern int screen_changed; /* XXX: Hack! */
++extern Boolean screen_changed; /* XXX: Hack! */
+ 
+ /*
+  * The menus look like this:
+Binary files c3270-3.3.12ga7/mkkeypad and c3270-3.3.12ga7-pma/mkkeypad differ
+diff -ruN c3270-3.3.12ga7/resources.h c3270-3.3.12ga7-pma/resources.h
+--- c3270-3.3.12ga7/resources.h	2012-05-03 16:18:34.344803762 +0800
++++ c3270-3.3.12ga7-pma/resources.h	2012-05-03 16:17:23.687044022 +0800
+@@ -74,6 +74,7 @@
+ #define ResCursesColorForIntensified ResCursesColorFor "Intensified"
+ #define ResCursesColorForProtected ResCursesColorFor "Protected"
+ #define ResCursesColorForProtectedIntensified ResCursesColorFor "ProtectedIntensified"
++#define ResCursesColorForBackground ResCursesColorFor "Background"
+ #define ResCursesKeypad		"cursesKeypad"
+ #define ResCursorBlink		"cursorBlink"
+ #define ResCursorColor		"cursorColor"
+diff -ruN c3270-3.3.12ga7/screen.c c3270-3.3.12ga7-pma/screen.c
+--- c3270-3.3.12ga7/screen.c	2012-05-03 16:18:34.344803762 +0800
++++ c3270-3.3.12ga7-pma/screen.c	2012-05-03 16:17:23.610376458 +0800
+@@ -129,7 +129,6 @@
+ };
+ 
+ static int *cmap = cmap8;
+-static int defcolor_offset = 0;
+ 
+ static int field_colors8[4] = {
+ 	COLOR_GREEN,	/* default */
+@@ -182,6 +181,14 @@
+ 	{ "magenta",    COLOR_MAGENTA },
+ 	{ "cyan",	COLOR_CYAN },
+ 	{ "white",	COLOR_WHITE },
++	{ "brblack", 8 + COLOR_BLACK },
++	{ "brred",	8 + COLOR_RED },
++	{ "brgreen",	8 + COLOR_GREEN },
++	{ "bryellow",	8 + COLOR_YELLOW },
++	{ "brblue",	8 + COLOR_BLUE },
++	{ "brmagenta",    8 + COLOR_MAGENTA },
++	{ "brcyan",	8 + COLOR_CYAN },
++	{ "brwhite",	8 + COLOR_WHITE },
+ 	{ CN,	0 }
+ };
+ 
+@@ -209,6 +216,7 @@
+ static void display_ge(unsigned char ebc);
+ static void init_user_colors(void);
+ static void init_user_attribute_colors(void);
++static void init_user_background_color(void);
+ static void screen_init2(void);
+ 
+ /* Initialize the screen. */
+@@ -285,6 +293,7 @@
+ 		appres.ascii_box_draw = True;
+ 
+ 	/* Pull in the user's color mappings. */
++    init_user_background_color();
+ 	init_user_colors();
+ 	init_user_attribute_colors();
+ }
+@@ -445,43 +454,51 @@
+ 	register_schange(ST_3270_MODE, status_3270_mode);
+ 	register_schange(ST_PRINTER, status_printer);
+ 
++    
++	/* Play with curses color. some hack for color */
++    if (!appres.mono) {
++        start_color();
++        /* Pull in the user's color mappings. */
++        if (has_colors() && COLORS >= 8) {
++		    	if (!appres.color8 && COLORS >= 16) {
++                    cmap = cmap16;
++                    field_colors = field_colors16;
++                } else {
++                    cmap = cmap8;
++                    field_colors = field_colors8;
++                }
++
++        }
++        init_user_colors();
++        init_user_attribute_colors();
++    }
++
+ 	/* Implement reverse video. */
+ 	if (appres.reverse_video) {
+-	    	int c;
+-
+-		bg_color = COLOR_WHITE;
++        int c;
+ 
+-		c = cmap8[HOST_COLOR_NEUTRAL_BLACK];
+-		cmap8[HOST_COLOR_NEUTRAL_BLACK] =
+-		    cmap8[HOST_COLOR_NEUTRAL_WHITE];
+-		cmap8[HOST_COLOR_NEUTRAL_WHITE] = c;
+-
+-		c = cmap16[HOST_COLOR_NEUTRAL_BLACK];
+-		cmap16[HOST_COLOR_NEUTRAL_BLACK] =
+-		    cmap16[HOST_COLOR_NEUTRAL_WHITE];
+-		cmap16[HOST_COLOR_NEUTRAL_WHITE] = c;
++		c = cmap[HOST_COLOR_NEUTRAL_BLACK];
++		cmap[HOST_COLOR_NEUTRAL_BLACK] = cmap[HOST_COLOR_NEUTRAL_WHITE];
++		cmap[HOST_COLOR_NEUTRAL_WHITE] = c;
+ 	}
+ 
++    bg_color = cmap[HOST_COLOR_NEUTRAL_BLACK];
++
++	if (!appres.mono) 
++        init_user_background_color();
++
+ 	/* Play with curses color. */
+ 	if (!appres.mono) {
+-		start_color();
+ 		if (has_colors() && COLORS >= 8) {
+-		    	if (!appres.color8 && COLORS >= 16) {
+-				cmap = cmap16;
+-				field_colors = field_colors16;
+-				defcolor_offset = 8;
+-				if (appres.reverse_video)
+-					bg_color += defcolor_offset;
+-			}
+ 		    	if (appres.m3279)
+ 				defattr =
+ 				    get_color_pair(
+-					    defcolor_offset + COLOR_BLUE,
++                        cmap[HOST_COLOR_BLUE],
+ 					    bg_color);
+ 			else
+ 				defattr =
+ 				    get_color_pair(
+-					    defcolor_offset + COLOR_GREEN,
++                        cmap[HOST_COLOR_GREEN],
+ 					    bg_color);
+ 			if (COLORS < 16)
+ 			    	appres.color8 = True;
+@@ -711,6 +728,11 @@
+ 		ResCursesColorForProtectedIntensified);
+ }
+ 
++static void 
++init_user_background_color(void)
++{
++	init_user_attribute_color(&bg_color, ResCursesColorForBackground);
++}
+ /*
+  * Map a field attribute to a curses color index.
+  * Applies only to m3270 mode -- does not work for mono.
+@@ -734,7 +756,7 @@
+ 		return get_color_pair(fg, bg_color) |
+ 		    (((ab_mode == TS_ON) || FA_IS_HIGH(fa))? A_BOLD: A_NORMAL);
+ 	} else if (!appres.mono) {
+-		return get_color_pair(defcolor_offset + COLOR_GREEN,
++		return get_color_pair(cmap[HOST_COLOR_GREEN],
+ 			bg_color) |
+ 		    (((ab_mode == TS_ON) || FA_IS_HIGH(fa))? A_BOLD: A_NORMAL);
+ 	} else {
+@@ -1284,6 +1306,11 @@
+ 			meta_escape = True;
+ 			continue;
+ 		}
++
++        if (k == 0 && ucs4 == 0177) { // Hack the BACKSPACE
++            k = KEY_BACKSPACE;
++            ucs4 = 0;
++        }
+ 		trace_event("Key '%s' (curses key 0x%x, char code 0x%x)\n",
+ 			decode_key(k, ucs4, alt, dbuf), k, ucs4);
+ 		kybd_input2(k, ucs4, alt);
+@@ -1367,7 +1394,8 @@
+ 			action_internal(Tab_action, IA_DEFAULT, CN, CN);
+ 			return;
+ 		case 0177:
+-			action_internal(Delete_action, IA_DEFAULT, CN, CN);
++	//		action_internal(Delete_action, IA_DEFAULT, CN, CN);
++			action_internal(BackSpace_action, IA_DEFAULT, CN, CN);
+ 			return;
+ 		case '\b':
+ 			action_internal(BackSpace_action, IA_DEFAULT, CN, CN);
+@@ -1832,7 +1860,7 @@
+ 	    oia_printer? 'P': ' ');
+ 	if (status_secure) {
+ 	    	if (appres.m3279)
+-			(void) attrset(get_color_pair(defcolor_offset + COLOR_GREEN,
++			(void) attrset(get_color_pair(cmap[HOST_COLOR_GREEN],
+ 				    bg_color) | A_BOLD);
+ 		else
+ 		    	(void) attrset(A_BOLD);
