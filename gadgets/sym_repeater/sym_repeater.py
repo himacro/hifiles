@@ -5,6 +5,24 @@ import appuifw
 import e32
 import audio
 import os
+import unittest
+import logging
+
+
+logger = logging.getLogger("HIREPEATER")
+log_file_handler = logging.FileHandler('c:\\hirepeater.txt', mode='w')
+log_formatter = logging.Formatter('%(name)-12s %(asctime)s %(levelname)-8s %(message)s')
+log_file_handler.setFormatter(log_formatter)
+logger.addHandler(log_file_handler)
+logger.setLevel(logging.DEBUG)
+
+
+def log(message):
+    logger.debug(message)
+
+
+def wait(sec):
+    e32.ao_sleep(sec)
 
 
 class Signal():
@@ -27,195 +45,557 @@ class Signal():
             self.callbacks.remove(callback)
 
 
-def loaded_state_required(method):
-    def decorated(self, *args, **kwarg):
-        if self.state == AudioPlayer.UNLOADED:
-            raise Exception("No audio file is loaded")
-        return method(self, *args, **kwarg)
-
-    return decorated
+#TODO:
 
 
-class AudioPlayer():
-    """docstring for AudioPlayer"""
-    UNLOADED = u'UNLOADED'
+class Time():
+    """Represents the time"""
+    def __init__(self, microseconds=0):
+        self.microseconds = microseconds
+
+    def __eq__(self, other):
+        if abs(self.microseconds - other.microseconds) < 300000:
+            return True
+        else:
+            return False
+
+    def __add__(self, other):
+        return Time(self.microseconds + other.microseconds)
+
+    def __sub__(self, other):
+        return Time(self.microseconds - other.microseconds)
+
+    def __neg__(self):
+        return Time(-self.microseconds)
+
+    def __cmp__(self, other):
+        return self.microseconds > other.microseconds
+
+    def to_microseconds(self):
+        return self.microseconds
+
+    def __repr__(self):
+        return unicode(self.microseconds)
+
+    def __lt__(self, other):
+        return self.microseconds < other.microseconds
+
+    @staticmethod
+    def sec(seconds):
+        return Time(seconds * 1000 * 1000)
+
+    def greater(t1, t2):
+        return t1 if t1 > t2 else t2
+
+    def less(t1, t2):
+        return t2 if t1 > t2 else t1
+
+
+class Player():
+    IDLE = u'IDLE'
+    READY = u'READY'
     PLAYING = u'PLAYING'
-    STOPPED = u'STOPPED'
     PAUSED = u'PAUSED'
 
     def __init__(self):
-        self.filename = ""
-        self.music = None
+        # Basic Management and Playback control
+        log("Initializing player")
+        self.filename = u''
+        self.sound = None
 
-        self.state = self.UNLOADED
-        self.begin = 0
-        self.end = 0
-        self.position = 0
-        self.timer = e32.Ao_timer()
+        # Pause
+        self.paused_position = None
 
-        self.is_waiting = False
-        self.lock = e32.Ao_lock()
-
-        self.state_changed = Signal()
-        self.position_changed = Signal()
+        # AB Repeat
+        self.point_a = None
+        self.point_b = None
 
     def __del__(self):
+        log("Deleting player")
         self.unload()
 
-    def reset(self):
-        self.unload()
-        self.state_changed.reset()
-        self.position_changed.reset()
+    def state(self):
+        if not self.sound:
+            return self.IDLE
+
+        if self.sound.state() == audio.EOpen:
+            if self.paused_position is None:
+                return self.READY
+            else:
+                return self.PAUSED
+
+        if self.sound.state() == audio.EPlaying:
+            return self.PLAYING
 
     def load(self, filename):
         self.unload()
-        self.music = audio.Sound.open(filename)
-        if self.music.state == audio.ENotReady:
-            self.music = None
-            raise Exception("Failed to open audio file ")
+
+        if not os.path.isfile(filename):
+            raise PlayerException('File Not Exist')
+
+        log("Sound.open(%s)" % filename)
+        sound = audio.Sound.open(filename)
+        if sound.state() != audio.EOpen:
+            raise PlayerException('File Open Error')
+
+        self.sound = sound
         self.filename = filename
-        self._change_to_state(self.STOPPED)
-        self.begin = 0
-        self.end = self.duration()
 
     def unload(self):
-        if self.state == self.UNLOADED:
+        if self.state() == self.IDLE:
             return
 
         self.stop()
-        self.music.close()
-        self.music = None
-        self.filename = ""
-        self.begin = 0
-        self.end = 0
-        self._change_to_state(self.UNLOADED)
 
-    @loaded_state_required
+        log("Sound.close()")
+        self.sound.close()
+        self.filename = u''
+        self.sound = None
+
     def play(self):
-        if self.state != self.STOPPED:
-            self.stop()
+        if self.state() in (self.IDLE, self.PLAYING):
+            return
 
-        self._start_from(self.begin)
+        if self.state() == self.PAUSED:
+            self._restore_paused_position()
 
-    @loaded_state_required
+        log("Sound.play()")
+        self.sound.play()
+
     def stop(self):
-        if self.state != AudioPlayer.STOPPED:
-            self.music.stop()
-
-        self._set_stop()
-
-    @loaded_state_required
-    def pause(self):
-        if self.state in (self.STOPPED, self.PAUSED):
+        if self.state() in (self.IDLE, self. READY):
             return
 
-        self.timer.cancel()
-        self.music.stop()
-        self._change_to_state(self.PAUSED)
+        self.paused_position = None
+        log("Sound.stop()")
+        self.sound.stop()
 
-    @loaded_state_required
-    def resume(self):
-        if self.state == self.PLAYING:
-            return
-        self._start_from(self.position)
-
-    @loaded_state_required
-    def seek(self, target):
-        target = max(self.begin, target)
-        target = min(self.end, target)
-
-        self.position = target
-        self.music.set_position(target * 1000)
-
-    @loaded_state_required
-    def wait(self):
-        if self.state == self.STOPPED:
-            return
-
-        if not self.is_waiting:
-            self.is_waiting = True
-            self.lock.wait()
-
-    @loaded_state_required
-    def duration(self):
-        return self._to_ms(self.music.duration())
-
-    @loaded_state_required
-    def set_begin(self, begin):
-        if begin >= 0 and begin < self.end:
-            self.begin = begin
-
-    @loaded_state_required
-    def set_end(self, end):
-        if end <= self.duration() and end > self.begin:
-            self.end = end
-
-        if self.end < self.duration():
-            self.position_changed.connect(self._check_end)
+    def position(self):
+        if self.state() == self.PLAYING:
+            return self._sound_position()
+        elif self.state() == self.PAUSED:
+            return self.paused_position
         else:
-            self.position_changed.disconnect(self._check_end)
+            return Time(0)
 
-    @loaded_state_required
-    def set_clip(self, begin, end):
-        if (begin >= 0 and
-                end <= self.duration() and
-                end > begin):
-            self.clr_clip()
-            self.set_begin(begin)
-            self.set_end(end)
+    def duration(self):
+        return Time(self.sound.duration())
 
-    @loaded_state_required
-    def clr_clip(self):
-        if self.state == self.UNLOADED:
-            raise Exception("No audio file is loaded")
+    def _sound_position(self):
+        return Time.less(Time(self.sound.current_position()), self.duration())
 
-        self.set_begin(0)
-        self.set_end(self.duration())
+    def pause(self):
+        if self.state() in (self.READY, self.IDLE, self.PAUSED):
+            return
 
-    def _start_from(self, position=0):
-        self.position = position
-        if self.position:
-            self.music.set_position(self.position * 1000)
-        self.music.play(callback=self._cb_start_stop)
-        self._change_to_state(self.PLAYING)
-        self.timer.cancel()
-        self.timer.after(0.1, self._cb_interval)
+        self.paused_position = self.position()
+        self.sound.stop()
 
-    def _set_stop(self):
-        self.timer.cancel()
-        self.position = self.end
-        if self.is_waiting:
-            self.lock.signal()
-            self.is_waiting = False
-        self._change_to_state(self.STOPPED)
+    def _restore_paused_position(self):
+        self._forward_sound_position(self.paused_position)
+        self.paused_position = None
 
-    def _cb_interval(self):
-        self.position = self._to_ms(self.music.current_position())
-        self.position_changed.emit(self.position)
+    def forward(self, offset):
+        if self.state() == self.IDLE:
+            return
 
-        self.timer.cancel()
-        if self.state == self.PLAYING:
-            self.timer.after(0.1, self._cb_interval)
+        target = self._position_plus_offset(offset)
 
-    def _cb_start_stop(self, prev, curr, err):
-        if curr == audio.EOpen:
-            self._set_stop()
+        if self.state() in (self.PAUSED, self.READY):
+            self.paused_position = target
 
-    def _change_to_state(self, next_state):
-        if next_state != self.state:
-            old_state = self.state
-            self.state = next_state
-            self.state_changed.emit(old_state, self.state)
+        if self.state() == self.PLAYING:
+            self._do_forward(target)
 
-    def _check_end(self, position):
-        if (position >= self.end and
-                self.state == self.PLAYING):
-            print 'Reach end'
-            self.stop()
+    def backward(self, offset):
+        if self.state() in (self.READY, self.IDLE):
+            return
 
-    @staticmethod
-    def _to_ms(position):
-        return round(position / 1000)
+        target = self._position_minus_offset(offset)
+
+        if self.state() == self.PAUSED:
+            self.paused_position = target
+
+        if self.state() == self.PLAYING:
+            self._do_backward(target)
+
+    def _do_forward(self, target):
+        self._forward_sound_position(target - self.position())
+
+    def _do_backward(self, target):
+        self.sound.stop()
+        self._forward_sound_position(target)
+        self.sound.play()
+
+    def _position_plus_offset(self, offset):
+        return Time.less(self.position() + offset, self.duration())
+
+    def _position_minus_offset(self, offset):
+        return Time.greater(Time(0), self.position() - offset)
+
+    def _forward_sound_position(self, position):
+        log("Sound.set_position(%d)" % position.to_microseconds())
+        self.sound.set_position(position.to_microseconds())
+
+    def set_ab(self):
+        if self.point_a and self.point_b:
+            return
+
+        elif self.point_a is None:
+            self.point_a = self.position()
+        else:
+            self.point_b = self.position()
+            self.pause()
+
+    def cancel_ab(self):
+        self.point_a = None
+        self.point_b = None
+
+    def repeat(self):
+        self.stop()
+        self.forward(self.point_a)
+        self.play()
+
+    def wait_stop(self):
+        while (self.state() == self.PLAYING and
+                self.position() < self.point_b):
+            e32.ao_sleep(0.2)
+        self.pause()
+
+
+class PlayerException(Exception):
+    pass
+
+
+class PlayerTest(unittest.TestCase):
+    def setup_idle(self):
+        self.player = Player()
+
+    def setup_ready(self):
+        self.setup_idle()
+        self.player.load(u'c:\\nce2.mp3')
+
+    def setup_playing(self):
+        self.setup_ready()
+        self.player.play()
+
+    def setup_paused(self):
+        self.setup_playing()
+        wait(2)
+        self.paused_position = self.player.position()
+        self.player.pause()
+
+    def _assert_filename(self, filename):
+        self.assertEqual(self.player.filename, filename)
+
+    def _assert_state(self, state):
+        self.assertEqual(self.player.state(), state)
+
+    def _assert_position(self, position):
+        self.assertEqual(self.player.position(), position)
+
+    def tearDown(self):
+        del(self.player)
+
+
+class PlayerInIdleTest(PlayerTest):
+    def setUp(self):
+        self.setup_idle()
+
+    def test_initial_state(self):
+        self._assert_state(Player.IDLE)
+
+    def test_load(self):
+        test_audio = u'c:\\nce2.mp3'
+        self.player.load(test_audio)
+        self.assertEqual(self.player.filename, test_audio)
+        self._assert_state(Player.READY)
+
+    def test_load_a_non_existing_file(self):
+        non_existing = u'c:\\non_existing.mp3'
+        self.assertRaises(PlayerException, self.player.load, non_existing)
+        self._assert_state(Player.IDLE)
+
+    def test_unload(self):
+        self.player.unload()
+        self._assert_state(Player.IDLE)
+
+    def test_play(self):
+        self.player.play()
+        self._assert_state(Player.IDLE)
+
+    def test_stop(self):
+        self.player.stop()
+        self._assert_state(Player.IDLE)
+
+    def test_pause(self):
+        self.player.pause()
+        self._assert_state(Player.IDLE)
+
+
+class PlayerInReadyTest(PlayerTest):
+    def setUp(self):
+        self.setup_ready()
+
+    def test_load(self):
+        test_audio2 = u'c:\\ep.m4a'
+        self.player.load(test_audio2)
+        self._assert_state(Player.READY)
+        self._assert_filename(test_audio2)
+
+    def test_unload(self):
+        self.player.unload()
+        self._assert_state(Player.IDLE)
+
+    def test_play(self):
+        self.player.play()
+        self._assert_state(Player.PLAYING)
+
+    def test_stop(self):
+        self.player.stop()
+        self._assert_state(Player.READY)
+
+    def test_pause(self):
+        self.player.pause()
+        self._assert_state(Player.READY)
+
+
+class PlayerInPlayingTest(PlayerTest):
+    def setUp(self):
+        self.setup_playing()
+
+    def test_load(self):
+        test_audio2 = u'c:\\ep.m4a'
+        self.player.load(test_audio2)
+        self._assert_state(Player.READY)
+        self._assert_filename(test_audio2)
+
+    def test_pause(self):
+        wait(1)
+        position_before_pause = self.player.position()
+        self.player.pause()
+        self._assert_state(Player.PAUSED)
+        wait(1)
+        self._assert_position(position_before_pause)
+
+    def test_unload(self):
+        self.player.unload()
+
+    def test_play(self):
+        wait(1)
+        position = self.player.position()
+        self.player.play()
+        self._assert_state(Player.PLAYING)
+        self._assert_position(position)
+
+    def test_stop(self):
+        self.player.stop()
+        self._assert_state(Player.READY)
+
+
+class PlayerInPausedTest(PlayerTest):
+    def setUp(self):
+        self.setup_paused()
+
+    def test_play(self):
+        self.player.play()
+        self._assert_position(self.paused_position)
+        self._assert_state(Player.PLAYING)
+
+    def test_stop(self):
+        self.player.stop()
+        self._assert_state(Player.READY)
+        self._assert_position(Time(0))
+
+    def test_pause(self):
+        self.player.pause()
+        self._assert_state(Player.PAUSED)
+
+    def test_unload(self):
+        self.player.unload()
+        self._assert_state(Player.IDLE)
+
+    def test_load(self):
+        test_audio2 = u'c:\\ep.m4a'
+        self.player.load(test_audio2)
+        self._assert_filename(test_audio2)
+        self._assert_state(Player.READY)
+        self._assert_position(Time(0))
+
+
+class PlayerSeekInPlayingTest(PlayerTest):
+    def setUp(self):
+        self.setup_playing()
+        wait(2)
+        self.position_before_seek = self.player.position()
+
+    def test_forward_within_duration(self):
+        offset = Time.sec(1)
+        self.player.forward(offset)
+        self._assert_position(self.position_before_seek + offset)
+
+    def test_backward_within_duration(self):
+        offset = Time.sec(1)
+        self.player.backward(offset)
+        self._assert_position(self.position_before_seek - offset)
+
+    def test_forward_too_much(self):
+        offset = Time.sec(10)
+        self.player.forward(offset)
+        self._assert_position(self.player.duration())
+
+    def test_backward_too_much(self):
+        offset = Time.sec(10)
+        self.player.backward(offset)
+        self._assert_position(Time(0))
+
+
+class PlayerSeekInPausedTest(PlayerTest):
+    def setUp(self):
+        self.setup_paused()
+        self.position_before_seek = self.player.position()
+
+    def test_forward_within_duration(self):
+        offset = Time.sec(1)
+        self.player.forward(offset)
+        self._assert_state(Player.PAUSED)
+        self._assert_position(self.position_before_seek + offset)
+
+    def test_backward_within_duration(self):
+        offset = Time.sec(1)
+        self.player.backward(offset)
+        self._assert_state(Player.PAUSED)
+        self._assert_position(self.position_before_seek - offset)
+
+    def test_forward_too_much(self):
+        offset = Time.sec(10)
+        self.player.forward(offset)
+        self._assert_state(Player.PAUSED)
+        self._assert_position(self.player.duration())
+
+    def test_backward_too_much(self):
+        offset = Time.sec(10)
+        self.player.backward(offset)
+        self._assert_state(Player.PAUSED)
+        self._assert_position(Time(0))
+
+
+class PlayerSeekInReadyTest(PlayerTest):
+    def setUp(self):
+        self.setup_ready()
+
+    def test_forward_within_duration(self):
+        offset = Time.sec(1)
+        self.player.forward(offset)
+        self._assert_position(offset)
+        self._assert_state(Player.PAUSED)
+
+    def test_forward_too_much(self):
+        offset = Time.sec(10)
+        self.player.forward(offset)
+        self._assert_state(Player.PAUSED)
+        self._assert_position(self.player.duration())
+
+    def test_backward(self):
+        offset = Time.sec(1)
+        self.player.backward(offset)
+        self._assert_state(Player.READY)
+
+
+class PlayerSeekInIdleTest(PlayerTest):
+    def setUp(self):
+        self.setup_idle()
+
+    def test_forward(self):
+        offset = Time.sec(1)
+        self.player.forward(offset)
+        self._assert_state(Player.IDLE)
+
+    def test_backward(self):
+        offset = Time.sec(1)
+        self.player.backward(offset)
+        self._assert_state(Player.IDLE)
+
+
+class PlayerABRepeatTest(PlayerTest):
+    def _assert_point_a(self, position):
+        self.assertEqual(self.player.point_a, position)
+
+    def _assert_point_b(self, position):
+        self.assertEqual(self.player.point_b, position)
+
+
+class PlayerABRepeatInPlayingAndABSetTest(PlayerABRepeatTest):
+    def setUp(self):
+        self.setup_playing()
+        wait(2)
+        self.point_a = self.player.position()
+        self.player.set_ab()
+        wait(2)
+        self.point_b = self.player.position()
+        self.player.set_ab()
+
+    def test_set_point_again(self):
+        self.player.set_ab()
+        self._assert_point_a(self.point_a)
+        self._assert_point_b(self.point_b)
+
+    def test_repeat_begin_from_point_a(self):
+        self.player.repeat()
+        self._assert_position(self.point_a)
+
+    def test_repeat_end_at_point_b(self):
+        self.player.repeat()
+        self.player.wait_stop()
+        self._assert_state(Player.PAUSED)
+        self._assert_position(self.point_b)
+
+    def test_cancel_ab(self):
+        self.player.cancel_ab()
+        self._assert_point_a(None)
+        self._assert_point_b(None)
+        self._assert_state(Player.PAUSED)
+        self._assert_position(self.point_b)
+
+
+class PlayerABRepeatInPlayingAndASetTest(PlayerABRepeatTest):
+    def setUp(self):
+        self.setup_playing()
+        wait(1)
+        self.point_a = self.player.position()
+        self.player.set_ab()
+
+    def test_set_point(self):
+        wait(1)
+        pos = self.player.position()
+        self.player.set_ab()
+        self._assert_point_b(pos)
+        self._assert_state(Player.PAUSED)
+
+    def test_cancel_point(self):
+        pos_at_cancel = self.player.position()
+        self.player.cancel_ab()
+        self._assert_point_a(None)
+        self._assert_point_b(None)
+        self._assert_state(Player.PLAYING)
+        self._assert_position(pos_at_cancel)
+
+
+class PlayerABRepeatInPlayingNoABSetTest(PlayerABRepeatTest):
+    def setUp(self):
+        self.setup_playing()
+
+    def test_state(self):
+        self._assert_state(Player.PLAYING)
+        self._assert_point_a(None)
+        self._assert_point_b(None)
+
+    def test_set_point(self):
+        wait(1)
+        pos = self.player.position()
+        self.player.set_ab()
+        self._assert_point_a(pos)
+        self._assert_state(Player.PLAYING)
 
 
 class AudioRecorder():
@@ -227,7 +607,7 @@ class AudioRecorder():
     def __init__(self):
         self.state = self.NO_MEDIA
         self.audio = None
-        self.audio_file = u"c:\\test_rec.wav"
+        self.audio_file = u"c:\\repeater\\record.wav"
 
         self.lock = e32.Ao_lock()
         self._is_waiting = False
@@ -293,181 +673,11 @@ class AudioRecorder():
         return round(position / 1000)
 
 
-import unittest
-
-
-class AudioPlayerTest(unittest.TestCase):
-    def setUp(self):
-        self.player = AudioPlayer()
-        self.audio = "c:\\ep.m4a"
-        self.audio2 = "c:\\nce2.mp3"
-
-    def test_initial_state_should_be_unloaded(self):
-        self.assertEqual(self.player.state, AudioPlayer.UNLOADED)
-
-    def test_load_should_success_when_unloaded(self):
-        self.player.load(self.audio)
-        self.assertEqual(self.player.state, AudioPlayer.STOPPED)
-        self.assertEqual(self.player.filename, self.audio)
-
-    def test_load_should_success_when_stopped(self):
-        self.player.load(self.audio)
-        self.player.load(self.audio2)
-        self.assertEqual(self.player.filename, self.audio2)
-        self.assertEqual(self.player.state, AudioPlayer.STOPPED)
-
-    def test_unload_should_sucess_when_stopped(self):
-        self.player.load(self.audio)
-        self.player.unload()
-        self.assertEqual(self.player.state, AudioPlayer.UNLOADED)
-        self.assertEqual(self.player.filename, "")
-
-    def test_unload_should_do_nothing_when_unloaded(self):
-        self.player.unload()
-        self.assertEqual(self.player.state, AudioPlayer.UNLOADED)
-
-    def test_unload_should_succeed_when_playing(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self.player.unload()
-        self.assertEqual(self.player.state, AudioPlayer.UNLOADED)
-
-    def test_unload_should_succeed_when_paused(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self.player.pause()
-        self.player.unload()
-        self.assertEqual(self.player.state, AudioPlayer.UNLOADED)
-
-    def test_play_should_succeed_when_stopped(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self.assertEqual(self.player.state, AudioPlayer.PLAYING)
-
-    def test_play_should_fail_when_unloaded(self):
-        self.assertRaises(Exception, self.player.play)
-
-    def test_play_should_restart_when_playing(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self._wait(2)
-        self.player.play()
-        self._assert_almost_same_time(0, self.player.position)
-
-    def test_stop_should_succeed_when_playing(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self.player.stop()
-        self.assertEqual(self.player.state, AudioPlayer.STOPPED)
-
-    def test_stop_should_succeed_when_paused(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self.player.pause()
-        self.player.stop()
-        self.assertEqual(self.player.state, AudioPlayer.STOPPED)
-
-    def test_stop_should_succeed_when_stopped(self):
-        self.player.load(self.audio)
-        self.player.stop()
-        self.assertEqual(self.player.state, AudioPlayer.STOPPED)
-
-    def test_pause_should_succeed_when_playing(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self.player.pause()
-        self.assertEqual(self.player.state, AudioPlayer.PAUSED)
-
-    def test_pause_should_do_nothing_when_stopped(self):
-        self.player.load(self.audio)
-        self.player.pause()
-        self.assertEqual(self.player.state, AudioPlayer.STOPPED)
-
-    def test_pause_should_do_nothing_when_already_paused(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self.player.pause()
-        self.player.pause()
-        self._assert_state(AudioPlayer.PAUSED)
-
-    def test_resume_should_continue_from_paused_position(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self._wait(1)
-        self.player.pause()
-        paused_position = self.player.position
-        self.player.resume()
-        self._assert_position(paused_position)
-
-    def test_position_should_be_notified_when_playing(self):
-        self.player.load(self.audio)
-        self.position_now = 0
-
-        def on_pos(pos):
-            self.position_now = pos
-
-        self.player.position_changed.connect(on_pos)
-        self.player.play()
-        self._wait(1)
-        self._assert_position(self.position_now)
-
-    def test_seek_should_be_supported(self):
-        self.player.load(self.audio)
-        self.player.play()
-        self.player.seek(3000)
-        self.player.pause()
-        self._assert_position(3000)
-
-    def test_clip_should_be_able_to_play(self):
-        self.player.load(self.audio)
-        self.player.set_clip(3000, 4000)
-        self.player.play()
-        self._assert_position(3000)
-        self.player.wait()
-        self._assert_position(4000)
-        self._assert_state(AudioPlayer.STOPPED)
-
-    def test_clip_should_be_kept_until_cleared(self):
-        self.player.load(self.audio)
-        self.player.set_clip(3000, 4000)
-        self.player.play()
-        self.player.wait()
-        self.assertEqual(self.player.begin, 3000)
-        self.assertEqual(self.player.end, 4000)
-        self.player.clr_clip()
-        self.assertEqual(self.player.begin, 0)
-        self.assertEqual(self.player.end, self.player.duration())
-
-    def test_pause_should_work_when_playing_a_clip(self):
-        self.player.load(self.audio)
-        self.player.set_clip(3000, 4000)
-        self.player.play()
-        self.player.pause()
-        self._assert_state(AudioPlayer.PAUSED)
-        self._assert_position(3000)
-
-    def _assert_state(self, state):
-        self.assertEqual(self.player.state, state)
-
-    def _assert_almost_same_time(self, position1, position2):
-        self.assertTrue(abs(position1 - position2) < 200, str(position1) + ', ' + str(position2))
-
-    def _assert_position(self, position):
-        self._assert_almost_same_time(self.player.position, position)
-
-    def _wait(self, sec):
-        e32.ao_sleep(sec)
-
-    def tearDown(self):
-        self.player.reset()
-        del(self.player)
-
-
 class AudioRecorderTest(unittest.TestCase):
     def setUp(self):
         self.recorder = AudioRecorder()
 
-    def test_recorder_should_be_not_ready_at_first(self):
+    def test_recorder_should_be_idle_at_first(self):
         self._assert_state(AudioRecorder.NO_MEDIA)
 
     def test_new_should_prepare_a_new_record(self):
@@ -533,136 +743,7 @@ class AudioRecorderTest(unittest.TestCase):
         e32.ao_sleep(sec)
 
 
-class HiRepeater():
-    PLAY_UNLOAD = u'UNLOADED'
-    PLAY_STOPPED = u'STOPPED'
-    PLAY_PLAYING = u'PLAYING'
-    A_SET = u'A_SET'
-    AB_SET = u'AB_SET'
-    AB_CANCEL = u'AB_CANCEL'
-
-    def __init__(self):
-        self.player = AudioPlayer()
-        self.recorder = AudioRecorder()
-        self.point_a = -1
-        self.point_b = -1
-        self.play_state = self.PLAY_UNLOAD
-
-    def load(self, filename):
-        self.player.load(filename)
-        self.play_state = self.PLAY_STOPPED
-
-    def play(self):
-        self.player.play()
-        self.play_state = self.PLAY_PLAYING
-
-    def set_ab(self):
-        if self.ab_state() in (self.AB_CANCEL, self.AB_SET):
-            self.point_a = self.player.position
-            self.point_b = -1
-            self.player.clr_clip()
-            self.player.set_begin(self.point_a)
-        else:
-            self.point_b = self.player.position
-            self.player.set_end(self.point_b)
-
-    def cancel_ab(self):
-        self.point_a = -1
-        self.point_b = -1
-        self.player.clr_clip()
-
-    def ab_state(self):
-        assert(not(self.point_a < 0 and self.point_b > 0))
-
-        if self.point_a >= 0 and self.point_b < 0:
-            return self.A_SET
-        if self.point_a >= 0 and self.point_b >= 0:
-            return self.AB_SET
-        if self.point_a < 0 and self.point_b < 0:
-            return self.AB_CANCEL
-
-    def wait(self):
-        self.player.wait()
-
-    def position(self):
-        return self.player.position
-
-
-class HiRepeaterTest(unittest.TestCase):
-    def _wait(self, sec):
-        e32.ao_sleep(sec)
-
-    def setUp(self):
-        self.repeater = HiRepeater()
-        self.audio = u'c:\\nce2.mp3'
-        self.repeater.load(self.audio)
-
-    def test_load(self):
-        self._assert_play_state(HiRepeater.PLAY_STOPPED)
-
-    def _est_play(self):
-        self.repeater.play()
-        self._assert_play_state(HiRepeater.PLAY_PLAYING)
-
-    def test_set_ab(self):
-        self.repeater.play()
-        self.repeater.set_ab()
-        self._assert_ab_state(HiRepeater.A_SET)
-        self.repeater.set_ab()
-        self._assert_ab_state(HiRepeater.AB_SET)
-        self.repeater.set_ab()
-        self._assert_ab_state(HiRepeater.A_SET)
-        self.repeater.cancel_ab()
-        self._assert_ab_state(HiRepeater.AB_CANCEL)
-
-    def test_repeat(self):
-        self.repeater.play()
-        self._wait(2)
-
-        self._print_ab()
-
-        a = self.repeater.position()
-        self.repeater.set_ab()
-
-        self._print_ab()
-
-        self._wait(3)
-        self.repeater.set_ab()
-
-        self._print_ab()
-
-        b = self.repeater.position()
-        self.repeater.wait()
-        self.repeater.play()
-        self._assert_play_position(a)
-        self.repeater.wait()
-        self._assert_play_position(b)
-
-    def _print_ab(self):
-        print 'A: ', self.repeater.point_a
-        print 'B: ', self.repeater.point_b
-
-    def _assert_ab_state(self, ab_state):
-        self.assertEqual(self.repeater.ab_state(), ab_state, str(self.repeater.point_a) + ':' + str(self.repeater.point_b))
-
-    def _assert_play_state(self, play_state):
-        self.assertEqual(self.repeater.play_state, play_state)
-
-    def _assert_play_position(self, play_position):
-        self.assertEqual(self.repeater.position(), play_position, str(self.repeater.point_a) + ':' + str(self.repeater.point_b))
-
-
-
-    def tearDown(self):
-        del(self.repeater)
-
-
-def test_main():
-    test_cases = (
-        HiRepeaterTest,
-        # AudioPlayerTest,
-        # AudioRecorderTest,
-    )
+def test_main(test_cases):
     suites = []
     load = unittest.TestLoader().loadTestsFromTestCase
     for case in test_cases:
@@ -670,5 +751,121 @@ def test_main():
     unittest.TextTestRunner().run(unittest.TestSuite(suites))
 
 
+def do_test():
+    test_cases = (
+        # PlayerInIdleTest,
+        # PlayerInReadyTest,
+        # PlayerInPlayingTest,
+        # PlayerInPausedTest,
+        # PlayerSeekInPlayingTest,
+        # PlayerSeekInPausedTest,
+        # PlayerSeekInReadyTest,
+        # PlayerSeekInIdleTest,
+        # PlayerABRepeatInPlayingNoABSetTest,
+        # PlayerABRepeatInPlayingAndASetTest,
+        # PlayerABRepeatInPlayingAndABSetTest,
+        # AudioRecorderTest,
+    )
+    log("")
+    test_main(test_cases)
+
+
+class Menu():
+    def __init__(self, title=u"Menu", items=None):
+        self.items = [] if items is None else items
+        self.title = unicode(title)
+
+    def append_item(self, item):
+        self.items.append(item)
+
+    def append_items(self, items):
+        for item in items:
+            self.items.append(item)
+
+    def item_titles(self):
+        return (item[0] for item in self.items)
+
+    def popup(self):
+        item_titles = [item[0] for item in self.items]
+        title = self.title
+
+        index = appuifw.popup_menu(item_titles, title)
+        return self.items[index][1]
+
+
+class Repeater():
+    def __init__(self):
+        self.player = Player()
+        self.recorder = AudioRecorder()
+
+        self.exit_flag = False
+
+    def compare(self):
+        self.player.repeat()
+        self.player.wait_stop()
+        self.recorder.play()
+        self.recorder.wait()
+
+    def run(self):
+        while not self.exit_flag:
+            menu = self.make_menu()
+            action = menu.popup()
+            action()
+
+    def repeat(self):
+        self.player.repeat()
+        self.player.wait_stop()
+
+    def record(self):
+        self.recorder.new()
+        self.recorder.record()
+
+    def make_menu(self):
+        action_load = (u'Load', lambda: self.player.load(u'c:\\repeater\\eng.m4a'))
+        action_exit = (u'Exit', self.exit)
+        action_play = (u'Play', self.player.play)
+        action_set_a = (u'Set A', self.player.set_ab)
+        action_set_b = (u'Set B', self.player.set_ab)
+        action_stop = (u'Stop', self.player.stop)
+        action_pause = (u'Pause', self.player.pause)
+        action_repeat = (u'Repeat', self.repeat)
+        action_record = (u'Record', self.record)
+        action_cancel_ab = (u'Cancel AB', self.player.cancel_ab)
+        action_stop_record = (u'Stop Record', self.recorder.stop)
+        action_compare = (u'Compare', self.compare)
+        action_play_record = (u'Play Record', self.recorder.play)
+
+        # Initial state
+        if self.player.state() == Player.IDLE:
+            menu = Menu('Idle', [action_load])
+        # Audio file loaded
+        elif self.player.state() == Player.READY:
+            menu = Menu('Ready', [action_play])
+        # Audio Playing
+        elif self.player.state() == Player.PLAYING and self.player.point_a is None:
+            menu = Menu('Playing', [action_stop, action_pause, action_set_a])
+        elif self.player.state() == Player.PAUSED and self.player.point_a is None:
+            menu = Menu('Paused', [action_play, action_stop])
+        elif self.player.state() == Player.PLAYING and self.player.point_a is not None:
+            menu = Menu('A set', [action_set_b, action_cancel_ab])
+        elif (self.player.state() == Player.PAUSED and
+                self.player.point_b is not None and
+                self.recorder.state == AudioRecorder.NO_MEDIA):
+            menu = Menu('AB set', [action_repeat, action_record, action_cancel_ab])
+        elif self.recorder.state == AudioRecorder.RECORDING:
+            menu = Menu('Recording', [action_stop_record])
+        elif (self.player.state() == Player.PAUSED and
+                self.player.point_b is not None and
+                self.recorder.state == AudioRecorder.STOPPED):
+            menu = Menu('Compare Ready', [action_compare, action_play_record, action_repeat, action_record, action_cancel_ab])
+        else:
+            menu = Menu()
+        menu.append_item(action_exit)
+        return menu
+
+    def exit(self):
+        self.exit_flag = True
+
 if __name__ == '__main__':
-    test_main()
+    Repeater().run()
+    print "Exited"
