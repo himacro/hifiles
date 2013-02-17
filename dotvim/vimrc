@@ -1,110 +1,278 @@
-source $VIMRUNTIME/vimrc_example.vim
-if $LANG == 'zh_CN' && has('win32') 
-" Chinese for Windows
-    set encoding=utf-8
-    set langmenu=zh_CN.utf-8
-    language messages zh_cn.utf-8
-    if has('gui')
-        source $VIMRUNTIME/delmenu.vim
-        source $VIMRUNTIME/menu.vim
+" Start {
+    source $VIMRUNTIME/vimrc_example.vim
+    if $LANG == 'zh_CN' && has('win32') 
+    " Chinese for Windows
+        set encoding=utf-8
+        set langmenu=zh_CN.utf-8
+        language messages zh_cn.utf-8
+        if has('gui')
+            source $VIMRUNTIME/delmenu.vim
+            source $VIMRUNTIME/menu.vim
+        endif
     endif
-endif
+" }
+
+" Vundle {
+    set nocompatible
+    filetype off
+
+    set rtp+=~/.vim/bundle/vundle
+    call vundle#rc()
+
+    " Let Vundle manage Vundle {
+        Bundle 'gmarik/vundle'
+    " }
+
+    " Original repos on github {
+        Bundle 'kien/ctrlp.vim'
+        Bundle 'scrooloose/nerdtree'
+        Bundle 'majutsushi/tagbar'
+        Bundle 'altercation/vim-colors-solarized'
+        Bundle 'chriskempson/vim-tomorrow-theme'
+        Bundle 'Shougo/neocomplcache'
+        Bundle 'Shougo/neosnippet'
+        Bundle 'scrooloose/nerdcommenter'
+        Bundle 'scrooloose/syntastic'
+        Bundle 'tpope/vim-fugitive'
+        Bundle 'tpope/vim-surround'
+        Bundle 'godlygeek/tabular'
+        Bundle 'Lokaltog/vim-easymotion'
+        Bundle 'spf13/vim-colors'
+        Bundle 'spf13/snipmate-snippets'
+        Bundle 'mileszs/ack.vim'
+        Bundle 'Lokaltog/vim-powerline'
+        Bundle 'klen/python-mode'
+        Bundle 'himacro/hlasm.vim'
+    " }
+
+    " vim-scripts repos {
+        " Bundle 'L9'
+    " }
+
+    " non github repos {
+        " Bundle 'git://git.wincent.com/command-t.git'
+    " }
+
+    filetype plugin indent on
+" }
  
-" enable pathogen for easy to install plugins and
-" runtime files in their own private direcotries.
-call pathogen#infect()
+" Core settings {
+    set encoding=utf-8
+    set fileencodings=ucs-bom,utf-8,chinese
+    set ambiwidth=double
+    set tabstop=4
+    set shiftwidth=4
+    set softtabstop=4
+    set expandtab
+    set autoindent
+    set smartindent
+    set number
+    set nowrap
+    set incsearch
+    set ignorecase
+    set backspace=indent,eol,start
+    filetype indent plugin on
+    syntax enable
+    set nobackup
+    set showmode
+    set ruler
+    set helplang=cn
+" }
 
-" Core settings
-set nocompatible
-set encoding=utf-8
-set fileencodings=ucs-bom,utf-8,chinese
-set ambiwidth=double
-set tabstop=4
-set shiftwidth=4
-set softtabstop=4
-set expandtab
-set autoindent
-set smartindent
-set number
-set nowrap
-set incsearch
-set ignorecase
-set backspace=indent,eol,start
-filetype indent plugin on
-syntax enable
-set nobackup
+" Colorscheme {
+    " solarized setting  {
+        if !has('gui') 
+            set background=dark
+            if $TERM_PALETTE == 'SOLARIZED'
+                set t_Co=16
+                let g:solarized_termcolors=16
+                colorscheme solarized
+            elseif &t_Co == 256
+                let g:solarized_termcolors=256
+                colorscheme solarized
+            else
+                colorscheme desert
+            endif
+        endif
+    " }
+" } 
 
-" messages and info
-set showmode
-set ruler
-set helplang=cn
+" plugins {
+    " PowerLine {
+        set laststatus=2
+        " let g:Powerline_symbols = 'fancy'
+    " } 
 
-" tags
+    " neocomplcache {
+        let g:acp_enableAtStartup = 0
+        let g:neocomplcache_enable_at_startup = 1
+        let g:neocomplcache_enable_camel_case_completion = 1
+        let g:neocomplcache_enable_smart_case = 1
+        let g:neocomplcache_enable_underbar_completion = 1
+        let g:neocomplcache_enable_auto_delimiter = 1
+        let g:neocomplcache_max_list = 15
+        let g:neocomplcache_force_overwrite_completefunc = 1
 
-" Colorscheme
-set background=dark
-"" solarized setting
-if $TERM_PALETTE == 'SOLARIZED'
-    set t_Co=16
-    let g:solarized_termcolors=16
-    colorscheme solarized
-elseif &t_Co == 256
-    let g:solarized_termcolors=256
-    colorscheme solarized
-else
-    colorscheme desert
-endif
+        " SuperTab like snippets behavior.
+        imap <silent><expr><TAB> neosnippet#expandable() ?
+                    \ "\<Plug>(neosnippet_expand_or_jump)" : (pumvisible() ?
+                    \ "\<C-e>" : "\<TAB>")
+        smap <TAB> <Right><Plug>(neosnippet_jump_or_expand)
 
-" multiple windows
-" set statusline=%F%m%r,%Y,%{&fileformat}\ \ \ ASCII=\%b,HEX=\%B\ \ \ %l,%c%V\ %p%%\ \ \ [\ %L\ lines\ in\ all\ ]
-set laststatus=2
-set splitbelow
-set splitright
-set hidden
+        " Define dictionary.
+        let g:neocomplcache_dictionary_filetype_lists = {
+                    \ 'default' : '',
+                    \ 'vimshell' : $HOME.'/.vimshell_hist',
+                    \ 'scheme' : $HOME.'/.gosh_completions'
+                    \ }
 
-" terminal
+        " Define keyword.
+        if !exists('g:neocomplcache_keyword_patterns')
+            let g:neocomplcache_keyword_patterns = {}
+        endif
+        let g:neocomplcache_keyword_patterns._ = '\h\w*'
 
-" diff mode
-set diffexpr=MyDiff()
-function! MyDiff()
-  let opt = '-a --binary '
-  if &diffopt =~ 'icase' | let opt = opt . '-i ' | endif
-  if &diffopt =~ 'iwhite' | let opt = opt . '-b ' | endif
-  let arg1 = v:fname_in
-  if arg1 =~ ' ' | let arg1 = '"' . arg1 . '"' | endif
-  let arg2 = v:fname_new
-  if arg2 =~ ' ' | let arg2 = '"' . arg2 . '"' | endif
-  let arg3 = v:fname_out
-  if arg3 =~ ' ' | let arg3 = '"' . arg3 . '"' | endif
-  let eq = ''
-  if $VIMRUNTIME =~ ' '
-    if &sh =~ '\<cmd'
-      let cmd = '""' . $VIMRUNTIME . '\diff"'
-      let eq = '"'
-    else
-      let cmd = substitute($VIMRUNTIME, ' ', '" ', '') . '\diff"'
-    endif
-  else
-    let cmd = $VIMRUNTIME . '\diff'
-  endif
-  silent execute '!' . cmd . ' ' . opt . arg1 . ' ' . arg2 . ' > ' . arg3 . eq
-endfunction
+        " Plugin key-mappings.
+        imap <C-k> <Plug>(neosnippet_expand_or_jump)
+        smap <C-k> <Plug>(neosnippet_expand_or_jump)
+        inoremap <expr><C-g> neocomplcache#undo_completion()
+        inoremap <expr><C-l> neocomplcache#complete_common_string()
+        inoremap <expr><CR> neocomplcache#complete_common_string()
 
-" plugins
-let g:vimim_punctuation=0
-"" SuperTab
-let g:SuperTabDefaultCompletionType="context"
-let g:SuperTabContextDefaultCompletionType="<c-p>"
-"" SnipMate
-let g:snipMateAllowMatchingDot = 0
-"" PowerLine
-"let g:Powerline_symbols = 'fancy'
+        " <TAB>: completion.
+        inoremap <expr><TAB> pumvisible() ? "\<C-n>" : "\<TAB>"
+        inoremap <expr><S-TAB> pumvisible() ? "\<C-p>" : "\<TAB>"
 
-" mapping
-nmap <F2> :NERDTreeToggle<CR> 
-nmap <F3> :TagbarToggle<CR>
-map <C-h> <C-W>h
-map <C-j> <C-W>j
-map <C-k> <C-W>k
-map <C-l> <C-W>l
+        " <CR>: close popup
+        " <s-CR>: close popup and save indent.
+        inoremap <expr><s-CR> pumvisible() ? neocomplcache#close_popup()"\<CR>" : "\<CR>"
+        inoremap <expr><CR> pumvisible() ? neocomplcache#close_popup() : "\<CR>"
 
+        " <C-h>, <BS>: close popup and delete backword char.
+        inoremap <expr><BS> neocomplcache#smart_close_popup()."\<C-h>"
+        inoremap <expr><C-y> neocomplcache#close_popup()
+
+        " Enable omni completion.
+        autocmd FileType css setlocal omnifunc=csscomplete#CompleteCSS
+        autocmd FileType html,markdown setlocal omnifunc=htmlcomplete#CompleteTags
+        autocmd FileType javascript setlocal omnifunc=javascriptcomplete#CompleteJS
+        autocmd FileType python setlocal omnifunc=pythoncomplete#Complete
+        autocmd FileType xml setlocal omnifunc=xmlcomplete#CompleteTags
+        autocmd FileType ruby setlocal omnifunc=rubycomplete#Complete
+
+        " Enable heavy omni completion.
+        if !exists('g:neocomplcache_omni_patterns')
+            let g:neocomplcache_omni_patterns = {}
+        endif
+        let g:neocomplcache_omni_patterns.php = '[^. \t]->\h\w*\|\h\w*::'
+        let g:neocomplcache_omni_patterns.perl = '\h\w*->\h\w*\|\h\w*::'
+        let g:neocomplcache_omni_patterns.c = '[^.[:digit:] *\t]\%(\.\|->\)'
+        let g:neocomplcache_omni_patterns.cpp = '[^.[:digit:] *\t]\%(\.\|->\)\|\h\w*::'
+        let g:neocomplcache_omni_patterns.ruby = '[^. *\t]\.\h\w*\|\h\w*::'
+
+        " Use honza's snippets.
+        " let g:neosnippet#snippets_directory='~/.vim/bundle/snipmate-snippets/snippets'
+
+        " For snippet_complete marker.
+        if has('conceal')
+            set conceallevel=2 concealcursor=i
+        endif
+
+    " }
+
+    " NERDTree {
+        " map <C-e> :NERDTreeToggle<CR>:NERDTreeMirror<CR>
+        nnoremap <silent> <leader>ff :NERDTreeToggle<CR>:NERDTreeMirror<CR>
+        " map <leader>e :NERDTreeFind<CR>
+        " nmap <leader>nt :NERDTreeFind<CR>
+
+        let NERDTreeShowBookmarks=1
+        let NERDTreeIgnore=['\.pyc', '\~$', '\.swo$', '\.swp$', '\.git', '\.hg', '\.svn', '\.bzr']
+        let NERDTreeChDirMode=0
+        let NERDTreeQuitOnOpen=1
+        let NERDTreeMouseMode=2
+        let NERDTreeShowHidden=1
+        let NERDTreeKeepTreeInNewTab=1
+        let g:nerdtree_tabs_open_on_gui_startup=0
+
+    " }
+     
+    " TagBar {
+        nnoremap <silent> <leader>tt :TagbarToggle<CR>
+    " }
+
+    " Tabularize {
+        nmap <Leader>a& :Tabularize /&<CR>
+        vmap <Leader>a& :Tabularize /&<CR>
+        nmap <Leader>a= :Tabularize /=<CR>
+        vmap <Leader>a= :Tabularize /=<CR>
+        nmap <Leader>a: :Tabularize /:<CR>
+        vmap <Leader>a: :Tabularize /:<CR>
+        nmap <Leader>a:: :Tabularize /:\zs<CR>
+        vmap <Leader>a:: :Tabularize /:\zs<CR>
+        nmap <Leader>a, :Tabularize /,<CR>
+        vmap <Leader>a, :Tabularize /,<CR>
+        nmap <Leader>a<Bar> :Tabularize /<Bar><CR>
+        vmap <Leader>a<Bar> :Tabularize /<Bar><CR>
+    " }
+
+    " Python-mode {
+        let g:pymode_lint_checker='pyflakes'
+        " let g:pymode_lint_ignore = "E501"
+        let g:pymode_lint_write = 0
+        let g:pymode_utils_whitespaces = 1
+
+        if !has('python')
+            let g:pymode=1
+        endif
+    " }
+    
+    " EasyMotion {
+    "}
+" }
+
+" key mapping {
+    map <C-H> <C-W>h
+    map <C-J> <C-W>j
+    map <C-K> <C-W>k
+    map <C-L> <C-W>l
+
+    nmap <leader>f0 :set foldlevel=0<CR>
+    nmap <leader>f1 :set foldlevel=1<CR>
+    nmap <leader>f2 :set foldlevel=2<CR>
+    nmap <leader>f3 :set foldlevel=3<CR>
+    nmap <leader>f4 :set foldlevel=4<CR>
+    nmap <leader>f5 :set foldlevel=5<CR>
+    nmap <leader>f6 :set foldlevel=6<CR>
+    nmap <leader>f7 :set foldlevel=7<CR>
+    nmap <leader>f8 :set foldlevel=8<CR>
+    nmap <leader>f9 :set foldlevel=9<CR>
+
+" }
+
+" diff mode {
+    set diffexpr=MyDiff()
+    function! MyDiff()
+      let opt = '-a --binary '
+      if &diffopt =~ 'icase' | let opt = opt . '-i ' | endif
+      if &diffopt =~ 'iwhite' | let opt = opt . '-b ' | endif
+      let arg1 = v:fname_in
+      if arg1 =~ ' ' | let arg1 = '"' . arg1 . '"' | endif
+      let arg2 = v:fname_new
+      if arg2 =~ ' ' | let arg2 = '"' . arg2 . '"' | endif
+      let arg3 = v:fname_out
+      if arg3 =~ ' ' | let arg3 = '"' . arg3 . '"' | endif
+      let eq = ''
+      if $VIMRUNTIME =~ ' '
+        if &sh =~ '\<cmd'
+          let cmd = '""' . $VIMRUNTIME . '\diff"'
+          let eq = '"'
+        else
+          let cmd = substitute($VIMRUNTIME, ' ', '" ', '') . '\diff"'
+        endif
+      else
+        let cmd = $VIMRUNTIME . '\diff'
+      endif
+      silent execute '!' . cmd . ' ' . opt . arg1 . ' ' . arg2 . ' > ' . arg3 . eq
+    endfunction
+" }
