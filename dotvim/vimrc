@@ -25,24 +25,34 @@
 
     " Original repos on github {
         Bundle 'kien/ctrlp.vim'
-        Bundle 'scrooloose/nerdtree'
         Bundle 'majutsushi/tagbar'
         Bundle 'altercation/vim-colors-solarized'
         Bundle 'chriskempson/vim-tomorrow-theme'
         Bundle 'Shougo/neocomplcache'
         Bundle 'Shougo/neosnippet'
+        Bundle 'Shougo/vimproc'
+        Bundle 'scrooloose/nerdtree'
         Bundle 'scrooloose/nerdcommenter'
         Bundle 'scrooloose/syntastic'
         Bundle 'tpope/vim-fugitive'
         Bundle 'tpope/vim-surround'
         Bundle 'godlygeek/tabular'
         Bundle 'Lokaltog/vim-easymotion'
+        Bundle 'Lokaltog/vim-powerline'
         Bundle 'spf13/vim-colors'
         Bundle 'spf13/snipmate-snippets'
         Bundle 'mileszs/ack.vim'
-        Bundle 'Lokaltog/vim-powerline'
         Bundle 'klen/python-mode'
+        Bundle 'xuhdev/SingleCompile'
+        Bundle 'jkeylu/vimdoc_cn'
+        Bundle 'vim-scripts/cmdline-completion'
+        Bundle 'vim-scripts/YankRing.vim'
         Bundle 'himacro/hlasm.vim'
+        Bundle 'xolox/vim-session'
+        Bundle 'vim-scripts/ZoomWin'
+        Bundle 'chrisbra/NrrwRgn'
+        Bundle "daylerees/colour-schemes", { "rtp": "vim-themes" }
+        " Bundle 'vim-scripts/sessionman.vim'
     " }
 
     " vim-scripts repos {
@@ -77,6 +87,9 @@
     set showmode
     set ruler
     set helplang=cn
+    set foldenable
+    set splitbelow
+    set splitright
 " }
 
 " Colorscheme {
@@ -133,15 +146,15 @@
         let g:neocomplcache_keyword_patterns._ = '\h\w*'
 
         " Plugin key-mappings.
-        imap <C-k> <Plug>(neosnippet_expand_or_jump)
-        smap <C-k> <Plug>(neosnippet_expand_or_jump)
+        " imap <C-k> <Plug>(neosnippet_expand_or_jump)
+        " smap <C-k> <Plug>(neosnippet_expand_or_jump)
         inoremap <expr><C-g> neocomplcache#undo_completion()
         inoremap <expr><C-l> neocomplcache#complete_common_string()
         inoremap <expr><CR> neocomplcache#complete_common_string()
 
         " <TAB>: completion.
-        inoremap <expr><TAB> pumvisible() ? "\<C-n>" : "\<TAB>"
-        inoremap <expr><S-TAB> pumvisible() ? "\<C-p>" : "\<TAB>"
+        "inoremap <expr><TAB> pumvisible() ? "\<C-n>" : "\<TAB>"
+        "inoremap <expr><S-TAB> pumvisible() ? "\<C-p>" : "\<TAB>"
 
         " <CR>: close popup
         " <s-CR>: close popup and save indent.
@@ -183,13 +196,14 @@
     " NERDTree {
         " map <C-e> :NERDTreeToggle<CR>:NERDTreeMirror<CR>
         nnoremap <silent> <leader>ff :NERDTreeToggle<CR>:NERDTreeMirror<CR>
+        nnoremap <silent> <leader>fl :NERDTreeFind<CR>
         " map <leader>e :NERDTreeFind<CR>
         " nmap <leader>nt :NERDTreeFind<CR>
 
         let NERDTreeShowBookmarks=1
         let NERDTreeIgnore=['\.pyc', '\~$', '\.swo$', '\.swp$', '\.git', '\.hg', '\.svn', '\.bzr']
         let NERDTreeChDirMode=0
-        let NERDTreeQuitOnOpen=1
+        let NERDTreeQuitOnOpen=0
         let NERDTreeMouseMode=2
         let NERDTreeShowHidden=1
         let NERDTreeKeepTreeInNewTab=1
@@ -217,18 +231,38 @@
     " }
 
     " Python-mode {
-        let g:pymode_lint_checker='pyflakes'
+        let g:pymode_lint = 0   " Let Syntastic to do the work
+        " let g:pymode_lint_checker='pep8' "pyflakes'
         " let g:pymode_lint_ignore = "E501"
-        let g:pymode_lint_write = 0
-        let g:pymode_utils_whitespaces = 1
+        " let g:pymode_lint_write = 0
+        " let g:pymode_lint_cwindow = 1
+        " let g:pymode_utils_whitespaces = 1
 
         if !has('python')
             let g:pymode=1
         endif
     " }
+
+    " Syntastic {
+        let g:syntastic_mode_map = { 'mode': 'active',
+                                   \ 'active_filetypes': ['c', 'cpp'],
+                                   \ 'passive_filetypes': ['python', 'hlasm'] } 
+        let g:syntastic_auto_loc_list = 1
+        
+    " }
     
     " EasyMotion {
     "}
+    
+    " vim-session {
+        let g:session_command_aliases = 1
+        set sessionoptions=blank,buffers,curdir,folds,tabpages,resize
+    " }
+
+    " YankRing {
+        let g:yankring_replace_n_nkey = '<Char-172>'
+        let g:yankring_replace_n_pkey = '<Char-174>'
+    " }
 " }
 
 " key mapping {
@@ -247,32 +281,31 @@
     nmap <leader>f7 :set foldlevel=7<CR>
     nmap <leader>f8 :set foldlevel=8<CR>
     nmap <leader>f9 :set foldlevel=9<CR>
-
 " }
 
 " diff mode {
     set diffexpr=MyDiff()
     function! MyDiff()
-      let opt = '-a --binary '
-      if &diffopt =~ 'icase' | let opt = opt . '-i ' | endif
-      if &diffopt =~ 'iwhite' | let opt = opt . '-b ' | endif
-      let arg1 = v:fname_in
-      if arg1 =~ ' ' | let arg1 = '"' . arg1 . '"' | endif
-      let arg2 = v:fname_new
-      if arg2 =~ ' ' | let arg2 = '"' . arg2 . '"' | endif
-      let arg3 = v:fname_out
-      if arg3 =~ ' ' | let arg3 = '"' . arg3 . '"' | endif
-      let eq = ''
-      if $VIMRUNTIME =~ ' '
-        if &sh =~ '\<cmd'
-          let cmd = '""' . $VIMRUNTIME . '\diff"'
-          let eq = '"'
+        let opt = '-a --binary '
+        if &diffopt =~ 'icase' | let opt = opt . '-i ' | endif
+        if &diffopt =~ 'iwhite' | let opt = opt . '-b ' | endif
+        let arg1 = v:fname_in
+        if arg1 =~ ' ' | let arg1 = '"' . arg1 . '"' | endif
+        let arg2 = v:fname_new
+        if arg2 =~ ' ' | let arg2 = '"' . arg2 . '"' | endif
+        let arg3 = v:fname_out
+        if arg3 =~ ' ' | let arg3 = '"' . arg3 . '"' | endif
+        let eq = ''
+        if $VIMRUNTIME =~ ' '
+            if &sh =~ '\<cmd'
+                let cmd = '""' . $VIMRUNTIME . '\diff"'
+                let eq = '"'
+            else
+                let cmd = substitute($VIMRUNTIME, ' ', '" ', '') . '\diff"'
+            endif
         else
-          let cmd = substitute($VIMRUNTIME, ' ', '" ', '') . '\diff"'
+            let cmd = $VIMRUNTIME . '\diff'
         endif
-      else
-        let cmd = $VIMRUNTIME . '\diff'
-      endif
-      silent execute '!' . cmd . ' ' . opt . arg1 . ' ' . arg2 . ' > ' . arg3 . eq
-    endfunction
+        silent execute '!' . cmd . ' ' . opt . arg1 . ' ' . arg2 . ' > ' . arg3 . eq
+    endf
 " }

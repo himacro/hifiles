@@ -10,6 +10,8 @@ else
     set guifontwide=WenQuanYi\ Micro\ Hei\ 10
 endif
 
+set guioptions=egmt
+
 " Menu & Toolbar 
 function! s:ToggleMenuToolbar()
     if &guioptions =~# 'T'
