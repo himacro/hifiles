@@ -15,6 +15,7 @@ Window {
 
     Text {
         text: qsTr("Hello World")
+        font.family: "Monospace"
         anchors.centerIn: parent
     }
 }
