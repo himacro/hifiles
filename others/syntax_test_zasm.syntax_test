@@ -1,0 +1,53 @@
+* SYNTAX TEST "Packages/User/zasm.sublime-syntax"
+
+LABEL MVC  OP1,OP2  REMARKS
+* <- entity.name.label
+*     ^ keyword.operator
+*          ^ meta.operands
+*                   ^ comment.line
+
+LABEL
+* <- entity.name.label
+
+      MVC 
+*     ^ keyword.operator
+
+LABEL MVC 
+* <- entity.name.label
+*     ^ keyword.operator
+
+      MVC  OP1,OP2
+*     ^ keyword.operator
+*          ^ meta.operands
+
+      MVC  OP1,OP2  REMARKS
+*     ^ keyword.operator
+*          ^ meta.operands
+*                   ^ comment.line
+
+      MVC  OP1,'STR ING'   REMARKS
+*     ^ keyword.operator
+*          ^ meta.operands
+*              ^ string.quoted.single
+*                          ^ comment.line
+
+      MVC  OP1,'STR ING'   REMARKS
+*     ^ keyword.operator
+*          ^ meta.operands
+*              ^ string.quoted.single
+*                          ^ comment.line
+
+      MVC  OP1,OP2,        REMARKS                                     XXXX
+*          ^ meta.operands                      
+*                          ^ comment.line
+*                                                                      ^ comment.block
+*                                                                       ^ comment.block
+               OP3
+
+      MVC  OP1,OP2,        REMARKS                                     X
+               OP3
+* <- invalid
+*              ^ meta.operands
+
+* COMMENT LINE
+* <- comment.line
