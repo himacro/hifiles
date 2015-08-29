@@ -1,0 +1,91 @@
+%YAML1.2
+---
+# See http://www.sublimetext.com/docs/3/syntax.html
+name: zasm
+file_extensions: [zs, zm]
+scope: source.zasm
+variables:
+  ident: '[\w@&#&\.]+'
+contexts:
+  main:
+    # Comments begin with a '//' and finish at the end of the line
+    - match: ^(\.\*|\*).*
+      scope: comment.line
+    - match: '^{{ident}}(?=\s+@RTNENT)'
+      scope: entity.name.function
+    - match: '^{{ident}}(?=\s+(DS|DC|EQU))'
+      scope: entity.name
+    - match: '^{{ident}}'
+      scope: entity.name
+    - match: \s+(?=\S)
+      set: operator 
+
+  operator:
+    - meta_content_scope: keyword.operator
+    - match: \s*$
+      set: main
+    - match: \b(IF|ENDIF|DO|ENDO|CASE|ENDCASE|WHEN|LEAVE|ITERATE|ITERATIF|LEAVEIF)\b
+      scope: keyword.control
+    - match: '@{{ident}}'
+      scope: keyword.operator
+    - match: \s+(?=\S)
+      set: operands
+
+  operands:
+    - include: operands_sub
+    - match: \s*$
+      set: main
+    - match: \s+
+      set: remarks
+
+  operands_sub:
+    - meta_content_scope: meta.operands
+    - match: ','
+      scope: comment
+    - match: \b[lLtTkKnNdD]\'{{ident}}
+      scope: constant.other
+    - match: '\bA?R(\d|1[0-5])\b'
+      scope: support.variable
+    - match: '\b\d+\b'
+      scope: constant.numeric
+    - match: '{{ident}}='
+      scope: variable.parameter
+    - match: \(
+      push: blacket
+    - match: \'
+      push: string
+
+
+  blacket:
+    - include: operands_sub
+    - match: \)
+      pop: true
+
+  string:
+    - meta_scope: string.quoted.single
+    - match: \' 
+      pop: true
+
+  remarks:
+    - meta_content_scope: comment.line
+    - match: '(?<=\A.{71})'
+      set: post_statement
+    - match: $
+      set: main
+
+  post_statement:
+    - match: (\S)(.*)
+      captures:
+        1: invalid
+        2: comment.block
+      set: continuation_leading_symbols
+    - match: \s.*$
+      scope: comment.block
+      set: main
+
+  continuation_leading_symbols:
+    - meta_content_scope: string
+    - match: '^(\s{15}|-\s+)(?=\S)'
+      set: operands
+    - match: \A.*
+      set: main
