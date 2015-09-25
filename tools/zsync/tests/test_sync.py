@@ -76,9 +76,9 @@ def do_sync(sync, pds_repo):
     for pdsn in pds_repo:
         sync.pull(pdsn, sync.root / pdsn)
 
-def has_contents(local_path, contents):
+def has_contents(local_path, content):
     with local_path.open('r') as f:
-        return f.read() == contents
+        return f.read() == content
 
 def test_get(sync, pds_repo):
     pdsn = 'TST.PDS'
@@ -91,7 +91,7 @@ def test_get(sync, pds_repo):
     sync.get(pdsn, memn, str(path))
 
     assert sync.repo.len() == 1
-    assert has_contents(path, member.contents)
+    assert has_contents(path, pds_repo.read_member(pdsn, memn))
     assert path.stat().st_mtime == member.time.timestamp()
 
 def test_get_from_non_existing_pds(sync):
@@ -121,7 +121,7 @@ def test_pull_selected_members(sync, pds_repo):
 
     assert sync.repo.len() == len(memns)
     for memn in memns:
-        assert has_contents( dir / memn, pds[memn].contents)
+        assert has_contents( dir / memn, pds_repo.read_member(pdsn, memn))
 
 def test_pull_all_members(sync, pds_repo):
     pdsn = 'TST.PDS'
@@ -170,7 +170,7 @@ def test_pull_new_member(sync, pds_repo):
     memn = 'TSTMEM4'
     dir = sync.root / pdsn
 
-    pds_repo[pdsn][memn] = MemberInfo(memn, contents="HELLO TSTMEM4")
+    pds_repo.add_member(pdsn, memn)
 
     pulled, _, _, _ = sync.pull(pdsn, dir)
 

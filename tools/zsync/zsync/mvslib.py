@@ -56,13 +56,19 @@ class PDSInfo():
 class MemberInfo():
     """ The class to represent information for PDS member """
 
-    def __init__(self, name, time="1900/01/01 00:00:00", contents=None):
+    def __init__(self, name, time=None, contents=None):
         self.name = name
         self.contents = contents
         self.update_mtime(time)
 
     def update_mtime(self, time):
-        self.time = datetime.strptime(time, "%Y/%m/%d %H:%M:%S")
+        if time:
+            if isinstance(time, datetime):
+                self.time = time
+            else:
+                self.time = datetime.strptime(time, "%Y/%m/%d %H:%M:%S")
+        else:
+            self.time = datetime.now()
 
 class PureDsn():
     def __init__(self, dsn, memn):

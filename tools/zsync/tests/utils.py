@@ -30,20 +30,33 @@ class PseudoTransfer():
 
 class PDSRepo:
     def __init__(self, pds_list):
-        self.pdss = {info["dsn"] : self.pds_from(info) for info in pds_list}
+        self.pdss = {}
+        self.contents = {}
+        for info in pds_list:
+            pds = PDSInfo(dsn=info["dsn"],
+                          recfm=info["recfm"],
+                          lrecl=info["lrecl"],
+                          dsorg=info["dsorg"],
+                          volser=info["volser"])
+            pdsn = info["dsn"]
+            self.pdss[pdsn] = pds
+            for memn, v in info["members"].items():
+                self.add_member(pdsn, memn, v["time"], v["contents"])
+
+    def add_member(self, pdsn, memn, time=datetime.now(), content=""):
+        pds = self.pdss[pdsn]
+        pds[memn] = MemberInfo(name=memn, time=time)
+        self.write_member(pdsn, memn, content)
+
+    def read_member(self, pdsn, memn):
+        return self.contents[self._keyify(pdsn, memn)]
+
+    def write_member(self, pdsn, memn, content ):
+        self.contents[self._keyify(pdsn, memn)] = content
 
     @staticmethod
-    def pds_from(info):
-        pds = PDSInfo(dsn=info["dsn"],
-                      recfm=info["recfm"],
-                      lrecl=info["lrecl"],
-                      dsorg=info["dsorg"],
-                      volser=info["volser"])
-
-        for k, v in info["members"].items():
-            pds[k] = MemberInfo(name=k, time=v["time"], contents=v["contents"])
-
-        return pds
+    def _keyify(*args):
+        return ":".join(args)
 
     @staticmethod
     def update_file_timestamp(path, mem=None):
@@ -62,7 +75,7 @@ class PDSRepo:
         file_path = Path(path)
 
         with file_path.open("w") as f:
-            f.write(mem.contents)
+            f.write(self.read_member(pdsn, memn))
         self.update_file_timestamp(file_path, mem)
 
     def write_file_to_member(self, pdsn, memn, path):
@@ -70,7 +83,7 @@ class PDSRepo:
         file_path = Path(path)
 
         with file_path.open("r") as f:
-            mem.contents = f.read()
+            self.write_member(pdsn, memn, f.read())
         self.update_member_time(mem, file_path)
 
     def write_pds_to_dir(self, pdsn, path):
