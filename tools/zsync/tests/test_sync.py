@@ -2,57 +2,20 @@ __author__ = 'pma'
 import pytest
 import tempfile
 from pathlib import Path
-from datetime import datetime
-import os
 
-from zsync.synchronizer import Synchronizer, SyncError
-from zsync.mvslib import PDSInfo, MemberInfo, MemberNotFound
+from zsync.mvslib import *
+from zsync.synchronizer import Synchronizer
 
-class PseudoTransfer():
-    def __init__(self, pds):
-        self.data_sets = {}
-        self.pds = pds
-
-    def get(self, pdsn, member, local_path):
-        try:
-            with open(local_path, 'w') as f:
-                f.write(self.pds[pdsn][member].contents)
-            mtime = self.pds[pdsn][member].time.timestamp()
-            os.utime(str(local_path), times=(mtime,) * 2)
-
-        except KeyError as e:
-            if pdsn in str(e):
-                raise SyncError("Data set '{}' not found".format(pdsn))
-        except MemberNotFound:
-                raise SyncError("Member {} not found".format(member))
-
-    def query_pds(self, pdsn):
-        return self.pds[pdsn]
-
-def pds_from_dict(dic):
-    dsinfo = dic["info"]
-    pds = PDSInfo(dsn=dsinfo["dsn"],
-                  recfm=dsinfo["recfm"],
-                  lrecl=dsinfo["lrecl"],
-                  dsorg=dsinfo["dsorg"],
-                  volser=dsinfo["volser"])
-
-    for k, v in dic["members"].items():
-        pds[k] = MemberInfo(name=k, time=v["time"], contents=v["contents"])
-
-    return pds
+from utils import PDSRepo, PseudoTransfer
 
 
-@pytest.fixture()
-def tst_pds():
-    pds_dict =  {
-        "info": {
-            "dsn" : "TST.PDS",
-            "recfm": "FB",
-            "lrecl": 80,
-            "dsorg": "PO",
-            "volser": "VOL001"
-        },
+pds_list =  (
+    {
+        "dsn" : "TST.PDS",
+        "recfm": "FB",
+        "lrecl": 80,
+        "dsorg": "PO",
+        "volser": "VOL001",
         "members" : {
             "TSTMEM1" :{
                 "time": "2014/09/10 09:44:09",
@@ -67,102 +30,160 @@ def tst_pds():
                 "contents": "HELLO WORLD\nHELLO ZSYNC\nHELLO TST.PDS\nHELLO TSTMEM3"
             }
         }
+    },
+    {
+        "dsn" : "TST.PDS1",
+        "recfm": "FB",
+        "lrecl": 80,
+        "dsorg": "PO",
+        "volser": "VOL001",
+        "members" : {
+            "TSTMEM1" :{
+                "time": "2014/09/10 09:44:09",
+                "contents": "HELLO WORLD\nHELLO ZSYNC\nHELLO TST.PDS1\nHELLO TSTMEM1"
+            },
+            "TSTMEM2" :{
+                "time": "2014/09/10 09:44:09",
+                "contents": "HELLO WORLD\nHELLO ZSYNC\nHELLO TST.PDS1\nHELLO TSTMEM2"
+            },
+            "TSTMEM3" :{
+                "time": "2014/09/10 09:44:09",
+                "contents": "HELLO WORLD\nHELLO ZSYNC\nHELLO TST.PDS1\nHELLO TSTMEM3"
+            }
+        }
     }
-    return {pds_dict["info"]["dsn"] : pds_from_dict(pds_dict)}
+)
 
 
 @pytest.fixture()
-def trans(tst_pds):
-    return PseudoTransfer(tst_pds)
+def pds_repo():
+    return PDSRepo(pds_list)
 
 @pytest.fixture()
-def sync(pseudo_trans):
-    return Synchronizer(pseudo_trans)
+def trans(pds_repo):
+    return PseudoTransfer(pds_repo)
 
 @pytest.fixture()
-def empty_local_dir():
+def empty_dir():
     return tempfile.TemporaryDirectory()
 
 @pytest.fixture()
-def local_dir_with_new_tstmem1(empty_local_dir, tst_pds):
-    pdsn = "TST.PDS"
-    member = "TSTMEM1"
-    path = Path(empty_local_dir.name, pdsn, member)
-    path.parent.mkdir(parents=True)
-    with path.open("w") as f:
-        f.write(tst_pds[pdsn][member].contents)
-    time = tst_pds[pdsn][member].time.timestamp()
-    os.utime(str(path), (time,) * 2)
+def sync(trans, empty_dir):
+    return Synchronizer(trans, empty_dir.name)
 
-    return empty_local_dir
-
+@pytest.fixture()
+def do_sync(sync, pds_repo):
+    for pdsn in pds_repo:
+        sync.pull(pdsn, sync.root / pdsn)
 
 def has_contents(local_path, contents):
     with local_path.open('r') as f:
         return f.read() == contents
 
-def test_get(sync, tst_pds, empty_local_dir):
+def test_get(sync, pds_repo):
     pdsn = 'TST.PDS'
-    member = 'TSTMEM1'
-    path = Path(empty_local_dir.name, pdsn, member)
+    memn = 'TSTMEM1'
 
-    sync.get(pdsn, member, str(path))
-    assert has_contents(path,
-                        tst_pds[pdsn][member].contents)
+    pds = pds_repo[pdsn]
+    member = pds[memn]
+    path = sync.root / pdsn / memn
 
-def test_get_from_non_existing_pds(sync, tst_pds, empty_local_dir):
-    pdsn = 'TST.PSX'
-    member = 'TSTMEM1'
-    path = Path(empty_local_dir.name, pdsn, member)
+    sync.get(pdsn, memn, str(path))
 
-    with pytest.raises(SyncError) as excinfo:
-        sync.get(pdsn, member, str(path))
-    assert "Data set" in str(excinfo.value)
+    assert sync.repo.len() == 1
+    assert has_contents(path, member.contents)
+    assert path.stat().st_mtime == member.time.timestamp()
 
-def test_get_a_non_existing_member(sync, tst_pds, empty_local_dir):
+def test_get_from_non_existing_pds(sync):
+    pdsn = 'TST.PDX'
+    memn = 'TSTMEM1'
+    path = sync.root / pdsn / memn
+
+    with pytest.raises(DataSetNotFound):
+        sync.get(pdsn, memn, str(path))
+
+def test_get_a_non_existing_member(sync):
     pdsn = 'TST.PDS'
-    member = 'TSTMEM0'
-    path = Path(empty_local_dir.name, pdsn, member)
+    memn = 'TSTMEM0'
+    path = sync.root / pdsn / memn
 
-    with pytest.raises(SyncError) as excinfo:
-        sync.get(pdsn, member, str(path))
-    assert "Member" in str(excinfo.value)
+    with pytest.raises(MemberNotFound):
+        sync.get(pdsn, memn, str(path))
 
-def test_force_pull_to_empty_local(sync, tst_pds, empty_local_dir):
+def test_pull_selected_members(sync, pds_repo):
     pdsn = 'TST.PDS'
-    members = ['TSTMEM1', 'TSTMEM2']
-    path = Path(empty_local_dir.name)
+    memns = ('TSTMEM1', 'TSTMEM2')
 
-    sync.pull(pdsn, members, str(path), force=True)
+    pds = pds_repo[pdsn]
+    dir = sync.root / pdsn
 
-    for m in members:
-        assert has_contents(path / pdsn / m, tst_pds[pdsn][m].contents)
+    sync.pull(pdsn, dir, memns)
 
-def test_force_pull_non_existing_member(sync, tst_pds, empty_local_dir):
+    assert sync.repo.len() == len(memns)
+    for memn in memns:
+        assert has_contents( dir / memn, pds[memn].contents)
+
+def test_pull_all_members(sync, pds_repo):
     pdsn = 'TST.PDS'
-    members = ['TSTMEM0', 'TSTMEM1', 'TSTMEM2']
-    path = Path(empty_local_dir.name)
 
-    good, _, _, not_found = sync.pull(pdsn, members, str(path), force=True)
+    pds = pds_repo[pdsn]
+    dir = sync.root / pdsn
 
-    assert good == ['TSTMEM1', 'TSTMEM2']
-    assert not_found == ['TSTMEM0']
-    for m in good:
-        m_path = path / pdsn / m
-        member = tst_pds[pdsn][m]
-        assert has_contents(m_path, member.contents)
-        assert datetime.fromtimestamp(m_path.stat().st_mtime) == member.time
+    sync.pull(pdsn, dir)
 
-def test_pull_older_member(sync, tst_pds, local_dir_with_new_tstmem1):
+    assert sync.repo.len() == pds.len()
+
+def test_pull_non_existing_member(sync, pds_repo):
     pdsn = 'TST.PDS'
-    members = ['TSTMEM1', 'TSTMEM2']
-    path = Path(local_dir_with_new_tstmem1.name)
+    memns = ('TSTMEM0', 'TSTMEM1', 'TSTMEM2')
 
-    good, _, ignored, _ = sync.pull(pdsn, members, str(path))
+    dir = sync.root / pdsn
 
-    assert good == ['TSTMEM2']
-    assert ignored == ['TSTMEM1']
-    for m in good:
-        assert has_contents(path / pdsn / m, tst_pds[pdsn][m].contents)
+    pulled, _, _, _ = sync.pull(pdsn, dir, memns)
+    assert 'TSTMEM0' not in pulled
 
 
+@pytest.mark.usefixtures("do_sync")
+def test_pull_synced_member(sync):
+    pdsn = 'TST.PDS'
+    dir = sync.root / pdsn
+
+    pulled, _, _, _ = sync.pull(pdsn, dir)
+
+    assert not pulled
+
+@pytest.mark.usefixtures("do_sync")
+def test_pull_modified_member(sync, pds_repo):
+    pdsn = 'TST.PDS'
+    memn = 'TSTMEM1'
+    dir = sync.root / pdsn
+
+    pds_repo[pdsn][memn].update_mtime("2014/09/11 11:00:03")
+
+    pulled, _, _, _ = sync.pull(pdsn, dir)
+
+    assert pulled == [memn]
+
+@pytest.mark.usefixtures("do_sync")
+def test_pull_new_member(sync, pds_repo):
+    pdsn = 'TST.PDS'
+    memn = 'TSTMEM4'
+    dir = sync.root / pdsn
+
+    pds_repo[pdsn][memn] = MemberInfo(memn, contents="HELLO TSTMEM4")
+
+    pulled, _, _, _ = sync.pull(pdsn, dir)
+
+    assert pulled == [memn]
+
+@pytest.mark.usefixtures("do_sync")
+def test_pull_deleting(sync, pds_repo):
+    pdsn = 'TST.PDS'
+    memn = 'TSTMEM1'
+    dir = sync.root / pdsn
+
+    del pds_repo[pdsn][memn]
+
+    _, deleted, _, _ = sync.pull(pdsn, dir)
+
+    assert deleted == [memn]

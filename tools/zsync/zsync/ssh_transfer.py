@@ -3,7 +3,6 @@ __author__ = 'pma'
 import paramiko
 import socket
 
-
 class SSHTransferError(Exception):
    pass
 

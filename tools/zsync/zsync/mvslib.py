@@ -1,10 +1,12 @@
 __author__ = 'pma'
-import datetime
-
+__all__ = ["PDSInfo", "MemberInfo", "MemberNotFound", "DataSetNotFound", "PureDsn"]
+from datetime import datetime
 
 class MemberNotFound(Exception):
     pass
 
+class DataSetNotFound(Exception):
+    pass
 
 class PDSInfo():
     """ The class to represent information for PDS """
@@ -36,11 +38,44 @@ class PDSInfo():
     def __setitem__(self, k, v):
         self.members[k] = v
 
+    def __delitem__(self, k):
+        del self.members[k]
+
+    def items(self):
+        return self.members.items()
+
+    def member_names(self):
+        return self.members.keys()
+
+    def len(self):
+        return len(self.members)
+
+    def __len__(self):
+        return self.len()
 
 class MemberInfo():
     """ The class to represent information for PDS member """
 
-    def __init__(self, name=None, time="1900/01/01 00:00:00", contents=None):
+    def __init__(self, name, time="1900/01/01 00:00:00", contents=None):
         self.name = name
-        self.time = datetime.datetime.strptime(time, "%Y/%m/%d %H:%M:%S")
         self.contents = contents
+        self.update_mtime(time)
+
+    def update_mtime(self, time):
+        self.time = datetime.strptime(time, "%Y/%m/%d %H:%M:%S")
+
+class PureDsn():
+    def __init__(self, dsn, memn):
+        self.dsn= dsn
+        self.memn = memn
+
+    def join(self, sep=":"):
+        return sep.join((self.dsn, self.memn))
+
+    def __eq__(self, other):
+        return (self.dsn, self.memn) == (other.dsn, other.memn)
+
+    def __hash__(self):
+        return hash(self.join())
+
+
