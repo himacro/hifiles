@@ -1,7 +1,9 @@
 __author__ = 'pma'
 
-from zsync.meta_repo import MetaRepo
+from zsync.meta import MetaRepo
 from zsync.mvslib import PDSInfo
+from zsync.token import TokenPool
+
 import pytest
 import tempfile
 from pathlib import Path
@@ -45,28 +47,29 @@ def work_dir(pds_repo):
 
 @pytest.fixture()
 def empty_repo(work_dir):
-    return MetaRepo(work_dir.name)
+    token_pool = TokenPool(work_dir.name)
+    return MetaRepo(work_dir.name, token_pool)
 
 @pytest.fixture()
 def tstpds1(tstmem1):
     return PDSInfo("TSTPDS1", members=(tstmem1,))
 
 @pytest.fixture()
-def repo(work_dir, pds_repo):
-    repo = MetaRepo(work_dir.name)
+def repo(work_dir, pds_repo, empty_repo):
+    repo = empty_repo
 
     pdsn = "TST.PDS1"
     pds = pds_repo[pdsn]
     for memn in pds:
-        path = Path(pdsn, memn)
-        repo.add(path, pds, pds[memn])
+        repo.add(pds, pds[memn])
 
     return repo
 
 def test_new_meta_repo():
     tmpd = tempfile.TemporaryDirectory()
-    repo = MetaRepo(tmpd.name)
-    assert repo.root == Path(tmpd.name).absolute()
+    token_pool = TokenPool(tmpd.name)
+    repo = MetaRepo(tmpd.name, token_pool)
+
     assert repo.len() == 0
 
 def test_add(empty_repo, pds_repo):
@@ -77,34 +80,28 @@ def test_add(empty_repo, pds_repo):
     pdsn, memn = "TST.PDS1", "TSTMEM1"
     pds = pds_repo[pdsn]
     mem = pds[memn]
-    path = Path(pdsn, memn)
 
-    repo.add(path, pds, mem)
+    repo.add(pds, mem)
 
     assert repo.len() == 1
 
 def test_delete(repo, pds_repo):
     pdsn, memn = "TST.PDS1", "TSTMEM1"
-    path = Path(pdsn, memn)
 
-    repo.delete(path)
+    repo.delete(pdsn, memn)
 
     assert repo.len() == 2
 
 def test_get(repo, pds_repo):
     pdsn, memn = "TST.PDS1", "TSTMEM1"
-    pds = pds_repo[pdsn]
-    mem = pds[memn]
+    mem = pds_repo[pdsn][memn]
 
-    path = Path(pdsn, memn)
+    item = repo.get(pdsn, memn)
 
-    item = repo.get(path)
-
-    assert item.relpath == path
     assert item.m_mtime == mem.time
 
 def test_get_dir(repo, pds_repo):
     pdsn = "TST.PDS1"
-    items = repo.get_dir(Path(pdsn))
+    items = repo.get_by_pds(pdsn)
 
     assert len(items) == 3

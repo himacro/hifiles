@@ -71,17 +71,29 @@ class MemberInfo():
             self.time = datetime.now()
 
 class PureDsn():
-    def __init__(self, dsn, memn):
-        self.dsn= dsn
-        self.memn = memn
+    def __init__(self, *args):
+        len_ = len(args)
+        self.dsn = args[0] if len_ > 0 else ""
+        self.memn = args[1] if len_ > 1 else ""
 
-    def join(self, sep=":"):
+    def _join(self, sep=":"):
         return sep.join((self.dsn, self.memn))
 
+    @property
+    def full(self):
+        if self.memn:
+            return "{}.({})".format(self.dsn, self.memn)
+        if self.memn:
+            return self.dsn
+
+    @property
+    def as_key(self):
+        return self._join()
+
     def __eq__(self, other):
-        return (self.dsn, self.memn) == (other.dsn, other.memn)
+        return (self.dsn, self.memn) == (other._dsn, other.memn)
 
     def __hash__(self):
-        return hash(self.join())
+        return hash(self._join())
 
 

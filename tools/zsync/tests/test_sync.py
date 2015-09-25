@@ -74,7 +74,7 @@ def sync(trans, empty_dir):
 @pytest.fixture()
 def do_sync(sync, pds_repo):
     for pdsn in pds_repo:
-        sync.pull(pdsn, sync.root / pdsn)
+        sync.pull(pdsn)
 
 def has_contents(local_path, content):
     with local_path.open('r') as f:
@@ -86,61 +86,51 @@ def test_get(sync, pds_repo):
 
     pds = pds_repo[pdsn]
     member = pds[memn]
-    path = sync.root / pdsn / memn
 
-    sync.get(pdsn, memn, str(path))
+    token = sync.get(pdsn, memn)
 
-    assert sync.repo.len() == 1
-    assert has_contents(path, pds_repo.read_member(pdsn, memn))
-    assert path.stat().st_mtime == member.time.timestamp()
+    assert token.pdsn == 'TST.PDS' and token.memn == "TSTMEM1"
+    assert has_contents(token.path, pds_repo.read_member(pdsn, memn))
+    assert token.path.stat().st_mtime == member.time.timestamp()
 
 def test_get_from_non_existing_pds(sync):
     pdsn = 'TST.PDX'
     memn = 'TSTMEM1'
-    path = sync.root / pdsn / memn
 
     with pytest.raises(DataSetNotFound):
-        sync.get(pdsn, memn, str(path))
+        sync.get(pdsn, memn)
 
 def test_get_a_non_existing_member(sync):
     pdsn = 'TST.PDS'
     memn = 'TSTMEM0'
-    path = sync.root / pdsn / memn
 
     with pytest.raises(MemberNotFound):
-        sync.get(pdsn, memn, str(path))
+        sync.get(pdsn, memn)
 
 def test_pull_selected_members(sync, pds_repo):
     pdsn = 'TST.PDS'
     memns = ('TSTMEM1', 'TSTMEM2')
 
-    pds = pds_repo[pdsn]
-    dir = sync.root / pdsn
+    pulled, _, _, _ = sync.pull(pdsn, memns)
 
-    sync.pull(pdsn, dir, memns)
-
-    assert sync.repo.len() == len(memns)
-    for memn in memns:
-        assert has_contents( dir / memn, pds_repo.read_member(pdsn, memn))
+    assert len(pulled) == len(memns)
+    for token in pulled:
+        assert token.memn in memns
+        assert has_contents(token.path, pds_repo.read_member(pdsn, token.memn))
 
 def test_pull_all_members(sync, pds_repo):
     pdsn = 'TST.PDS'
-
-    pds = pds_repo[pdsn]
-    dir = sync.root / pdsn
-
-    sync.pull(pdsn, dir)
-
-    assert sync.repo.len() == pds.len()
+    pulled, _, _, _ = sync.pull(pdsn)
+    assert len(pulled) == len(pds_repo[pdsn])
 
 def test_pull_non_existing_member(sync, pds_repo):
     pdsn = 'TST.PDS'
     memns = ('TSTMEM0', 'TSTMEM1', 'TSTMEM2')
 
-    dir = sync.root / pdsn
+    pulled, _, _, _ = sync.pull(pdsn, memns)
 
-    pulled, _, _, _ = sync.pull(pdsn, dir, memns)
-    assert 'TSTMEM0' not in pulled
+    assert len(pulled) == 2
+    assert 'TSTMEM0' not in [token.memn for token in pulled]
 
 
 @pytest.mark.usefixtures("do_sync")
@@ -148,7 +138,7 @@ def test_pull_synced_member(sync):
     pdsn = 'TST.PDS'
     dir = sync.root / pdsn
 
-    pulled, _, _, _ = sync.pull(pdsn, dir)
+    pulled, _, _, _ = sync.pull(pdsn)
 
     assert not pulled
 
@@ -156,34 +146,34 @@ def test_pull_synced_member(sync):
 def test_pull_modified_member(sync, pds_repo):
     pdsn = 'TST.PDS'
     memn = 'TSTMEM1'
-    dir = sync.root / pdsn
 
     pds_repo[pdsn][memn].update_mtime("2014/09/11 11:00:03")
 
-    pulled, _, _, _ = sync.pull(pdsn, dir)
+    pulled, _, _, _ = sync.pull(pdsn)
 
-    assert pulled == [memn]
+    assert len(pulled) == 1
+    assert memn in (token.memn for token in pulled)
 
 @pytest.mark.usefixtures("do_sync")
 def test_pull_new_member(sync, pds_repo):
     pdsn = 'TST.PDS'
     memn = 'TSTMEM4'
-    dir = sync.root / pdsn
 
     pds_repo.add_member(pdsn, memn)
 
-    pulled, _, _, _ = sync.pull(pdsn, dir)
+    pulled, _, _, _ = sync.pull(pdsn)
 
-    assert pulled == [memn]
+    assert len(pulled) == 1
+    assert memn in (token.memn for token in pulled)
 
 @pytest.mark.usefixtures("do_sync")
 def test_pull_deleting(sync, pds_repo):
     pdsn = 'TST.PDS'
     memn = 'TSTMEM1'
-    dir = sync.root / pdsn
 
     del pds_repo[pdsn][memn]
 
-    _, deleted, _, _ = sync.pull(pdsn, dir)
+    _, deleted, _, _ = sync.pull(pdsn)
 
-    assert deleted == [memn]
+    assert len(deleted) == 1
+    assert memn in (token.memn for token in deleted)
