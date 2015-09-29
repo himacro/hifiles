@@ -24,7 +24,7 @@ class MetaRepo():
         self.token_pool = token_pool
 
     def add(self, pds, mem):
-        token = self.token_pool.get_token(pds.dsn, mem.name)
+        token = self.token_pool.get_by_dsn(pds.dsn, mem.name)
 
         path, pdsn, memn = token.path, token.pdsn, token.memn
         f_mtime = datetime.fromtimestamp(path.stat().st_mtime)
@@ -35,11 +35,11 @@ class MetaRepo():
         self.add(pds, mem) # update = new_token ???
 
     def get(self, pdsn, memn):
-        token = self.token_pool.get_token(pdsn, memn)
+        token = self.token_pool.get_by_dsn(pdsn, memn)
         return self.items[token.as_key]
 
     def delete(self, pdsn, memn):
-        token = self.token_pool.get_token(pdsn, memn)
+        token = self.token_pool.get_by_dsn(pdsn, memn)
         del self.items[token.as_key]
 
     def get_by_pds(self, pdsn):

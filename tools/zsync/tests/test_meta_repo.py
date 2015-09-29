@@ -6,7 +6,6 @@ from zsync.token import TokenPool
 
 import pytest
 import tempfile
-from pathlib import Path
 from utils import PDSRepo
 
 pds_list =  (

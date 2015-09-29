@@ -84,14 +84,10 @@ def test_get(sync, pds_repo):
     pdsn = 'TST.PDS'
     memn = 'TSTMEM1'
 
-    pds = pds_repo[pdsn]
-    member = pds[memn]
-
     token = sync.get(pdsn, memn)
 
     assert token.pdsn == 'TST.PDS' and token.memn == "TSTMEM1"
-    assert has_contents(token.path, pds_repo.read_member(pdsn, memn))
-    assert token.path.stat().st_mtime == member.time.timestamp()
+    assert has_contents(token.path, pds_repo.read_content(pdsn, memn))
 
 def test_get_from_non_existing_pds(sync):
     pdsn = 'TST.PDX'
@@ -116,7 +112,7 @@ def test_pull_selected_members(sync, pds_repo):
     assert len(pulled) == len(memns)
     for token in pulled:
         assert token.memn in memns
-        assert has_contents(token.path, pds_repo.read_member(pdsn, token.memn))
+        assert has_contents(token.path, pds_repo.read_content(pdsn, token.memn))
 
 def test_pull_all_members(sync, pds_repo):
     pdsn = 'TST.PDS'
@@ -159,7 +155,7 @@ def test_pull_new_member(sync, pds_repo):
     pdsn = 'TST.PDS'
     memn = 'TSTMEM4'
 
-    pds_repo.add_member(pdsn, memn)
+    pds_repo.update_member(pdsn, memn)
 
     pulled, _, _, _ = sync.pull(pdsn)
 
@@ -177,3 +173,37 @@ def test_pull_deleting(sync, pds_repo):
 
     assert len(deleted) == 1
     assert memn in (token.memn for token in deleted)
+
+@pytest.mark.usefixtures("do_sync")
+def test_push_nothing(sync, pds_repo):
+    pdsn = 'TST.PDS'
+    pushed, _, _, _ = sync.push(pdsn)
+    assert len(pushed) == 0
+
+@pytest.mark.usefixtures("do_sync")
+def test_push_modified_member(sync, pds_repo):
+    pdsn = 'TST.PDS'
+    memn = 'TSTMEM1'
+    import time
+    time.sleep(1)
+    sync.token_pool.get_by_dsn(pdsn, memn).path.touch()
+
+    pushed, _, _, _ = sync.push(pdsn)
+    assert len(pushed) == 1
+
+@pytest.mark.usefixtures("do_sync")
+def test_push_new_member(sync, pds_repo):
+    pdsn = 'TST.PDS'
+    memn = 'TSTMEM0'
+    with (sync.root / pdsn / memn).open("w") as f:
+        f.write("TEST")
+    pushed, _, _, _ = sync.push(pdsn)
+    assert len(pushed) == 1
+
+@pytest.mark.usefixtures("do_sync")
+def test_push_to_delete_member(sync, pds_repo):
+    pdsn = 'TST.PDS'
+    memn = 'TSTMEM1'
+    sync.token_pool.get_by_dsn(pdsn, memn).path.unlink()
+    _, deleted, _, _ = sync.push(pdsn)
+    assert len(deleted) == 1

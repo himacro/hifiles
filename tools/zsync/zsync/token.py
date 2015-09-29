@@ -8,11 +8,11 @@ class TokenPool:
         self.tokens = {}
 
     def _new_token(self, *args):
-        #TODO: It should depend on the config file to get_token path from (pdsn, memn)
-        path = Path(*args)
-        return Token(self.root, path, *args)
+        # TODO: It should depend on the config file to get_by_dsn path from (pdsn, memn)
+        rel_path = self._get_rel_path(Path(*args))
+        return Token(self.root, rel_path, *args)
 
-    def get_token(self, *args):
+    def get_by_dsn(self, *args):
         key = self._make_key(*args)
         if key in self.tokens:
             return self.tokens[key]
@@ -21,16 +21,29 @@ class TokenPool:
             self.tokens[key] = token
             return token
 
+    def get_by_path(self, path):
+        rel_path = self._get_rel_path(path)
+        parts = rel_path.parts
+
+        pdsn_key = self._make_key(parts[:-1])
+        if pdsn_key in self.tokens:
+            return self.get_by_dsn(self, *parts)
+        else:
+            return None
+
+    def _get_rel_path(self, path):
+        #TODO: handle exception that the path is not under the root
+        return (self.root / path).absolute().relative_to(self.root)
+
     def _make_key(self, *args):
         return ":".join(args)
 
 
 class Token:
-    def __init__(self, root, path, *args):
+    def __init__(self, root, rel_path, *args):
         self.root = root
+        self.rel_path = rel_path
         self._dsn = PureDsn(*args)
-        # TODO: handle exception that the path is not under the root
-        self.rel_path = (self.root / path).absolute().relative_to(self.root)
 
     @property
     def path(self):
@@ -55,5 +68,5 @@ class Token:
     def memn(self):
         return self._dsn.memn
 
-    def match_memn(self, patterns):
+    def match(self, patterns):
         return self.memn in patterns

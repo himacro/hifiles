@@ -20,48 +20,86 @@ class Synchronizer():
         self.token_pool = TokenPool(self.root)
         self.repo = MetaRepo(self.root, self.token_pool)
 
-    def status_remote(self, pdsn, memn=""):
-        pass
+    def _member_tokens(self, pds, patterns=None):
+        pdsn = pds.dsn
+        items = self.repo.get_by_pds(pdsn)
+
+        m_tokens = {self.token_pool.get_by_dsn(pdsn, memn) for memn in pds}
+        i_tokens = {item.token for item in items}
+
+        if patterns:
+            m_tokens = {token for token in m_tokens if token.match(patterns)}
+            i_tokens = {token for token in i_tokens if token.match(patterns)}
+
+        common = m_tokens & i_tokens
+        new = m_tokens - common
+        deleted = i_tokens - common
+
+        def _is_member_changed(token):
+            memn = token.memn
+            if self.repo.get(pdsn, memn).m_mtime != pds[memn].time:
+                return True
+            else:
+                return False
+
+        changed = set(filter(_is_member_changed, common))
+        unchanged = common - changed
+
+        return {"new" : new,
+                "deleted" : deleted,
+                "changed" : changed,
+                "unchanged" : unchanged}
+
+
+    def _file_tokens(self, pds_token, patterns=None):
+        pdsn = pds_token.pdsn
+        items = self.repo.get_by_pds(pds_token.pdsn)
+
+        file_tokens = {self.token_pool.get_by_dsn(pdsn, f_path.stem)
+                        for f_path in pds_token.path.iterdir() if f_path.is_file()}
+        item_tokens = {item.token for item in items}
+
+        if patterns:
+            file_tokens = {token for token in file_tokens if token.match(patterns)}
+            item_tokens = {token for token in item_tokens if token.match(patterns)}
+
+        common = file_tokens & item_tokens
+        new = file_tokens - common
+        deleted = item_tokens - common
+
+        def _is_file_changed(token):
+            if self.repo.get(pdsn, token.memn).f_mtime != datetime.fromtimestamp(token.path.stat().st_mtime):
+                return True
+            else:
+                return False
+
+        changed = set(filter(_is_file_changed, common))
+        unchanged = common - changed
+
+        return {"new" : new,
+                "deleted" : deleted,
+                "changed" : changed,
+                "unchanged" : unchanged}
 
     def pull(self, pdsn, patterns=None, force=False):
-        dir_path = self.token_pool.get_token(pdsn).path
+        pds_token = self.token_pool.get_by_dsn(pdsn)
+        dir_path = pds_token.path
         if dir_path.is_file():
             raise NotADirectoryError
         if not dir_path.exists():
             dir_path.mkdir(parents=True)
 
-        pds = self.trans.list(pdsn) # it's PdsInfo object
-        items = self.repo.get_by_pds(pdsn) # it's a list of meta items
+        pds = self.trans.list(pdsn)
 
-        tokens_at_remote = (self.token_pool.get_token(pdsn, memn) for memn in pds)
-        tokens_in_repo = (item.token for item in items)
+        m_tokens = self._member_tokens(pds, patterns)
+        f_tokens = self._file_tokens(pds_token, patterns)
 
-        if patterns:
-            tokens_at_remote = {token for token in tokens_at_remote if token.match_memn(patterns)}
-            tokens_in_repo = {token for token in tokens_in_repo if token.match_memn(patterns)}
-        else:
-            tokens_at_remote = set(tokens_at_remote)
-            tokens_in_repo = set(tokens_in_repo)
+        to_get = m_tokens["new"] | (m_tokens["changed"] & f_tokens["unchanged"])
+        to_delete = m_tokens["deleted"] & f_tokens["unchanged"]
 
-        # members in the meta info
-        tokens_in_common = tokens_at_remote & tokens_in_repo
-        tokens_new_at_remote = tokens_at_remote - tokens_in_common
-        tokens_deleted_at_remote = tokens_in_repo - tokens_in_common
-
-        def _only_updated_at_remote(token):
-            pdsn, memn, path = token.pdsn, token.memn, token.path
-            item = self.repo.get(pdsn, memn)
-            return ((item.m_mtime < pds[memn].time) and
-                    (item.f_mtime == datetime.fromtimestamp(path.stat().st_mtime)))
-
-
-        tokens_to_get = {token for token in tokens_at_remote
-                         if (force or
-                             (token in tokens_new_at_remote) or
-                             _only_updated_at_remote(token))}
         pulled = set()
         failed = set()
-        for token in tokens_to_get:
+        for token in to_get:
             memn, path = token.memn, token.path
             try:
                 self.trans.get(pdsn, memn, path)
@@ -72,25 +110,18 @@ class Synchronizer():
             self.repo.add(pds, pds[memn])
             pulled.add(token)
 
-        def _not_updated_at_local(token):
-            pdsn, memn, path = token.pdsn, token.memn, token.path
-            item = self.repo.get(pdsn, memn)
-            return  item.f_mtime == datetime.fromtimestamp(path.stat().st_mtime)
-
-        tokens_to_delete = {token for token in tokens_deleted_at_remote
-                            if (force or _not_updated_at_local(token))}
-        for token in tokens_to_delete:
+        for token in to_delete:
             memn, path = token.memn, token.path
             path.unlink()
             self.repo.delete(pdsn, memn)
 
-        deleted = tokens_to_delete
-        ignored = tokens_at_remote - (pulled | deleted | failed)
+        deleted = to_delete
+        ignored = (m_tokens["new"] | m_tokens["deleted"] | m_tokens["changed"]) - (pulled | deleted | failed)
 
         return pulled, deleted, failed, ignored
 
     def get(self, pdsn, memn, force=False):
-        token = self.token_pool.get_token(pdsn, memn)
+        token = self.token_pool.get_by_dsn(pdsn, memn)
         memn, path = token.memn, token.path
         if path.is_dir():
             raise IsADirectoryError
@@ -103,3 +134,38 @@ class Synchronizer():
         self.repo.add(pds, member)
 
         return token
+
+    def push(self, pdsn, patterns=None, force=False):
+        pds_token = self.token_pool.get_by_dsn(pdsn)
+        dir_path = pds_token.path
+        if not dir_path.is_dir():
+            raise NotADirectoryError
+
+        pds = self.trans.list(pdsn)
+        m_tokens = self._member_tokens(pds, patterns)
+        f_tokens = self._file_tokens(pds_token, patterns)
+
+        to_put = f_tokens["new"] | (f_tokens["changed"] & m_tokens["unchanged"])
+        to_delete = f_tokens["deleted"] & m_tokens["unchanged"]
+
+        pushed = set()
+        failed = set()
+        for token in to_put:
+            memn, path = token.memn, token.path
+            try:
+                self.trans.put(path, pdsn, memn)
+            except:
+                failed.add(token)
+                continue
+
+            self.repo.add(pds, pds[memn])
+            pushed.add(token)
+
+        for token in to_delete:
+            memn = token.memn
+            self.trans.delete(pdsn, memn)
+
+        deleted = to_delete
+        ignored = (f_tokens["new"] | f_tokens["deleted"] | f_tokens["changed"]) - (pushed | deleted | failed)
+
+        return pushed, deleted, failed, ignored
