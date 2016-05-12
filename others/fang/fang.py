@@ -1,7 +1,11 @@
-from bs4 import BeautifulSoup
-import requests
 import os
 from datetime import datetime
+import json
+import collections
+
+from bs4 import BeautifulSoup
+import requests
+
 
 
 class House:
@@ -27,28 +31,165 @@ class House:
         self.hid = hid
         self.prices = {}
 
-    def __str__(self):
-        return '{:<20} - {:<10} {} {:>5}万 - {} - {}'.format(self.community, self.area, self.layout, self.total_price, self.title, self.href)
 
-    def update_price(self, date, total_price, unit_price):
+    def update_prices(self, total_price, unit_price, date):
         if type(date) is datetime:
-            date = date.strftime('%Y-%m-%d')
+            date = date.strftime('%Y/%m/%d')
 
         self.prices[date] = {
                 'total_price': total_price,
                 'unit_price': unit_price
                 }
 
+    def update(self, other):
+        if other.hid != self.hid:
+            return
 
-def lj_houses(url=None, houses=None):
-    if not houses:
-        houses = {}
+        self.title = other.title
+        self.community = other.community
+        self.area = other.area
+        self.layout = other.layout
+        self.floor = other.floor
+        self.school = other.school
+        self.href = other.href
+        self.prices.update(other.prices)
 
-    if not url:
-        return houses
 
-    resp = requests.get(url) 
-    soup = BeautifulSoup(resp.content.decode('utf-8'), 'lxml')
+    def __str__(self):
+       # return '{hid}'.format(self)
+        return '{h.hid}: {h.community} - {h.area}平|{h.layout} - {h.title} - {h.href}'.format(h=self)
+
+
+class Houses:
+    def __init__(self):
+        self.data = {}
+        self.update_dates = []
+
+    def update(self, parse, urls):
+        if not urls:
+            return
+
+        today = datetime.now().strftime('%Y-%m-%d')
+
+        for url in urls:
+            soup = BeautifulSoup(requests.get(url).content.decode('utf-8'), 'lxml')
+
+            house_list = parse(soup, today)
+
+            for (title, community, 
+                    area, layout, floor, school, 
+                    hid, href, 
+                    total_price, unit_price) in house_list:
+
+                house = House(title, community, area, layout, floor, school, hid, href)
+                house.update_prices(total_price, unit_price, today)
+
+                if hid in self.data:
+                    self.data[hid].update(house)
+                else:
+                    self.data[hid] = house
+
+        if today not in self.update_dates:
+            self.update_dates.append(today)
+
+
+    @staticmethod
+    def dump_json(obj, fn):
+        with open(fn, 'w') as f:
+            json.dump(obj, f, indent=4, ensure_ascii=False, default=serialize)
+
+    @staticmethod
+    def load_json(fn):
+        with open(fn, 'r') as f:
+            return json.load(f, object_hook=unserialize)
+
+    def report(self):
+        new, removed, price_changed = self.get_changes()
+
+        table = ( 
+                    ('新增房源', new),
+                    ('下架房源', removed),
+                    ('价格变动', price_changed)
+                )
+
+        for title, lst in table:
+            print('==========')
+            print(title)
+            print('==========')
+            if lst:
+                for house in lst:
+                    print('{h.hid}: {h.community} - {h.area}平|{h.layout} - {h.title} - {h.href}'.format(h=house))
+                    for date in self.update_dates[-2:]:
+                        if date in house.prices:
+                            print('  {}:  {p[total_price]}万 / {p[unit_price]}'.format(date, p=house.prices[date]))
+            else:
+                print('无')
+
+            print('')
+
+
+    def get_changes(self):
+        new = set()
+        removed = set()
+        price_changed = set()
+
+        if not self.update_dates:
+            print('没有任何更新日期')
+        elif len(self.update_dates) == 1:
+            new = set(self.data.values())
+        else:
+            for date, info in self.data.items():
+                prices = info.prices
+                latest = self.update_dates[-1]
+                last = self.update_dates[-2]
+
+                if (latest not in prices and last in prices):
+                    removed.add(info)
+                elif len(prices) == 1:
+                    new.add(info)
+                elif prices[latest]['total_price'] != prices[last]['total_price']:
+                    price_changed.add(info)
+
+        return new, removed, price_changed
+
+
+
+def parse_hwj(soup, date):
+    houses = []
+
+    house_lis = soup.find(id='houses_list').find_all(class_='houseList_cycle')
+    for hl in house_lis:
+        tag_title = hl.find(class_='fontHouse_title')
+        tag_a1 = hl.find(class_='fontHouse_txt')
+
+        title = str(tag_title.a.string)
+        path = tag_title.a['href']
+        hid = 'HWJ_' + os.path.basename(path)
+        href = 'http://dl.hwj.com'+path
+
+        community = str(tag_a1.find(class_='m_r1_lou').string.strip())
+        area = float(tag_a1.find(class_='m_r1_mj').string.strip()[:-1])
+        layout = str(tag_a1.find(class_='m_r1_hx').string.strip())
+        floor = ""
+
+        total_price = float(tag_a1.find(class_='m_r1_price').string.strip()[:-1])
+        unit_price = float(tag_a1.find(class_='m_r1_dj').string.strip()[:-3])
+
+        school = ""
+
+        houses.append((title, community, area, layout, floor, school, hid, href, total_price, unit_price))
+
+#       house = House(title, community, area, layout, floor, school, hid, href)
+#       house.update_prices(total_price, unit_price, date)
+
+#       houses.append(house)
+
+    return houses
+
+
+def parse_lj(soup, date):
+    houses = []
+
     house_lis = soup.find('ul', id='house-lst').find_all('li')
 
     for hl in house_lis:
@@ -72,74 +213,18 @@ def lj_houses(url=None, houses=None):
         tag = col1.find(class_='fang05-ex')
         school = str(tag.string.strip()) if tag else ""
 
-        if hid not in houses:
-            house = House(title, community, area, layout, floor, school, hid, href)
-            houses[hid] = house
-        else:
-            house = houses[hid]
+        houses.append((title, community, area, layout, floor, school, hid, href, total_price, unit_price))
 
-        house.update_price(datetime.now(), total_price, unit_price)
+#       house = House(title, community, area, layout, floor, school, hid, href)
+#       house.update_prices(total_price, unit_price, date)
 
-    return houses
-
-def hwj_houses(url=None, houses=None):
-    if not houses:
-        houses = {}
-
-    if not url:
-        return houses
-
-    resp = requests.get(url) 
-    soup = BeautifulSoup(resp.content.decode('utf-8'), 'lxml')
-
-    house_lis = soup.find(id='houses_list').find_all(class_='houseList_cycle')
-
-    for hl in house_lis:
-        tag_title = hl.find(class_='fontHouse_title')
-        tag_a1 = hl.find(class_='fontHouse_txt')
-
-        title = str(tag_title.a.string)
-        path = tag_title.a['href']
-        hid = 'HWJ_' + os.path.basename(path)
-        href = 'http://dl.hwj.com'+path
-
-        community = str(tag_a1.find(class_='m_r1_lou').string.strip())
-        area = float(tag_a1.find(class_='m_r1_mj').string.strip()[:-1])
-        layout = str(tag_a1.find(class_='m_r1_hx').string.strip())
-        floor = ""
-
-        total_price = float(tag_a1.find(class_='m_r1_price').string.strip()[:-1])
-        unit_price = float(tag_a1.find(class_='m_r1_dj').string.strip()[:-3])
-
-        school = ""
-
-        if hid not in houses:
-            house = House(title, community, area, layout, floor, school, hid, href)
-            houses[hid] = house
-        else:
-            house = houses[hid]
-
-        house.update_price(datetime.now(), total_price, unit_price)
+#       houses.append(house)
 
     return houses
 
 
-def test_lj_houses():
-    houses = lj_houses(url='http://dl.lianjia.com/xiaoqu/1311042053231/esf')
-    for h in houses:
-        print(h)
 
-    return houses
-
-def test_hwj_houses():
-    houses = hwj_houses(url='http://dl.hwj.com/search/ershou?project=老年公寓')
-    for h in houses:
-        print(h)
-
-    return houses
-
-def get_houses():
-
+def update_houses(json_fn):
     lj_community_urls = (
         'http://dl.lianjia.com/xiaoqu/1311042052472/esf/',
         'http://dl.lianjia.com/xiaoqu/1311042053235/esf/',
@@ -158,22 +243,48 @@ def get_houses():
         'http://dl.hwj.com/search/ershou?project=学院派'
         )
 
-    houses = {}
-    for url in lj_community_urls:
-        houses = lj_houses(url, houses)
+    if os.path.isfile(json_fn):
+        houses = Houses.load_json(json_fn)
+        Houses.dump_json(houses, 'backup.json')
+    else:
+        houses = Houses()
 
-    for url in hwj_community_urls:
-        houses = hwj_houses(url, houses)
+    houses.update(parse_lj, lj_community_urls)
+    houses.update(parse_hwj, hwj_community_urls)
 
-    for h in houses:
-        print(h)
+    Houses.dump_json(houses, json_fn)
+    
+    houses.report()
 
-    json_fn = datetime.now().strftime('%Y-%m-%d')+'.json'
-    with open(json_fn, 'w') as f:
-        json.dump(houses, f, indent=4, ensure_ascii=False, default=lambda obj: vars(obj))
 
+classes = {
+        'Houses': Houses,
+        'House': House
+        }
+
+
+def serialize(obj):
+    d = { '__classname__' : type(obj).__name__}
+    d.update(vars(obj))
+    return d
+
+
+def unserialize(d):
+    clsname = d.pop('__classname__', '')
+    if clsname in classes:
+        cls = classes[clsname]
+        obj = cls.__new__(cls)
+        for key, value in d.items():
+            setattr(obj, key, value)
+
+        return obj
+
+    else:
+        return d
 
 
 if __name__ == '__main__':
+#   update_houses('fang.json')
     pass
+
 
