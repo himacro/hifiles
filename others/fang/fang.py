@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
 import os
 from datetime import datetime
 import json
@@ -8,7 +10,7 @@ import requests
 
 
 
-class House:
+class House():
     def __init__(
             self,
             title,
@@ -60,7 +62,7 @@ class House:
         return '{h.hid}: {h.community} - {h.area}平|{h.layout} - {h.title} - {h.href}'.format(h=self)
 
 
-class Houses:
+class Houses():
     def __init__(self):
         self.data = {}
         self.update_dates = []
@@ -69,7 +71,7 @@ class Houses:
         if not urls:
             return
 
-        today = datetime.now().strftime('%Y-%m-%d')
+        today = datetime.now().strftime('%Y/%m/%d')
 
         for url in urls:
             soup = BeautifulSoup(requests.get(url).content.decode('utf-8'), 'lxml')
@@ -138,13 +140,13 @@ class Houses:
         elif len(self.update_dates) == 1:
             new = set(self.data.values())
         else:
+            last, latest = self.update_dates[-2:]
             for date, info in self.data.items():
                 prices = info.prices
-                latest = self.update_dates[-1]
-                last = self.update_dates[-2]
 
-                if (latest not in prices and last in prices):
-                    removed.add(info)
+                if latest not in prices:
+                    if last in prices:
+                        removed.add(info)
                 elif len(prices) == 1:
                     new.add(info)
                 elif prices[latest]['total_price'] != prices[last]['total_price']:
@@ -283,8 +285,12 @@ def unserialize(d):
         return d
 
 
-if __name__ == '__main__':
-#   update_houses('fang.json')
+def dump_houses(houses):
     pass
+    
+
+
+if __name__ == '__main__':# and __file__ in globals():
+    update_houses('fang.json')
 
 
