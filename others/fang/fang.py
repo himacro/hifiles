@@ -4,9 +4,11 @@ import os
 from datetime import datetime
 import json
 import collections
+import heapq
 
 from bs4 import BeautifulSoup
 import requests
+
 
 
 
@@ -55,6 +57,24 @@ class House():
         self.school = other.school
         self.href = other.href
         self.prices.update(other.prices)
+
+    def price_changed(self, days=2):
+        if len(self.prices) < days:
+            return True
+
+        prices_set = {price['total_price'] for price in self.latest_prices(days).values()}
+        if len(prices_set) == 1:
+            return False
+        else:
+            return True
+
+    def latest_dates(self, days=2):
+        days = min(days, len(self.prices))
+        return heapq.nlargest(days, self.prices.keys())
+        
+
+    def latest_prices(self, days=2):
+        return {date: self.prices[date] for date in self.latest_dates(days)}
 
 
     def __str__(self):
@@ -121,9 +141,10 @@ class Houses():
             if lst:
                 for house in lst:
                     print('{h.hid}: {h.community} - {h.area}平|{h.layout} - {h.title} - {h.href}'.format(h=house))
-                    for date in self.update_dates[-2:]:
-                        if date in house.prices:
-                            print('  {}:  {p[total_price]}万 / {p[unit_price]}'.format(date, p=house.prices[date]))
+                    for date, price in house.latest_prices(2).items():
+#                   for date in house.latest_dates(days=2):
+#                       if date in house.prices:
+                        print('  {}:  {p[total_price]}万 / {p[unit_price]}'.format(date, p=price))
             else:
                 print('无')
 
@@ -140,17 +161,18 @@ class Houses():
         elif len(self.update_dates) == 1:
             new = set(self.data.values())
         else:
-            last, latest = self.update_dates[-2:]
-            for date, info in self.data.items():
-                prices = info.prices
+                last, latest = self.update_dates[-2:]
 
-                if latest not in prices:
-                    if last in prices:
-                        removed.add(info)
-                elif len(prices) == 1:
-                    new.add(info)
-                elif prices[latest]['total_price'] != prices[last]['total_price']:
-                    price_changed.add(info)
+                for date, info in self.data.items():
+                    prices = info.prices
+
+                    if latest not in prices:
+                        if last in prices:
+                            removed.add(info)
+                    elif len(prices) == 1:
+                        new.add(info)
+                    elif info.price_changed(days=2):
+                        price_changed.add(info)
 
         return new, removed, price_changed
 
@@ -290,7 +312,8 @@ def dump_houses(houses):
     
 
 
-if __name__ == '__main__':# and __file__ in globals():
+if __name__ == '__main__': #and __file__ in globals():
     update_houses('fang.json')
+#   pass
 
 
