@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 from datetime import datetime
+import re
 import logging
 
 from bs4 import BeautifulSoup as Soup
@@ -18,8 +19,8 @@ logging.basicConfig(level=logging.INFO)
 TODAY = datetime.now().date()
 
 
-engine = create_engine('sqlite:///lianjia.db', echo=True)
-Session = sessionmaker(bind=engine)
+# engine = create_engine('sqlite:///lianjia.db', echo=False)
+# Session = sessionmaker(bind=engine)
 Base = declarative_base()
 
 
@@ -53,23 +54,36 @@ class Price(Base):
         return "<Price(hid='{p.hid}', date='{p.date}', unit_price={p.unit_price}, total_price={p.total_price}>".format(p=self)
 
 
-def create_tables():
-    Base.metadata.create_all(engine)
-
-create_tables()
 
 
-def parse_lianjia(html, session):
-    soup = Soup(html, 'lxml')
+total_page_pattern = re.compile(r'{"totalPage":(\d+)')
+
+
+def find_next_pages(soup):
+    ''' Find next pages '''
+
+    page_box_tag = soup.find(class_='house-lst-page-box')
+    page_url_template = r'http://dl.lianjia.com' + page_box_tag['page-url']
+
+    match = total_page_pattern.match(page_box_tag['page-data'])
+    if match:
+        total_page = int(match.groups()[0])
+    
+    urls = [page_url_template.format(page=i) for i in range(2, total_page + 1)]
+
+    return urls
+        
+
+def find_houses(soup, session):
+    ''' Find houses information and store them '''
 
     house_tags = soup.select('.sellListContent > li')
-
     for htag in house_tags:
 
         title_tag = htag.find(class_='title')
         title = title_tag.get_text().strip()
         id_ = int(title_tag.find('a')['href'][-17:-5])
-        title = htag.find(class_='title').get_text().strip()
+        title = htag.find(class_='title').get_text().strip().split('\n')[0]
         community, layout, area, direction, decoration, has_lift = \
                 htag.find(class_='houseInfo').get_text().strip().replace(' ', '').split('|')
         area = float(area[:-2])
@@ -80,7 +94,10 @@ def parse_lianjia(html, session):
         h = session.query(House).filter(House.id_ == id_).first()
         if not h:
             h = House(id_=id_, title=title, community=community, area=area, layout=layout)
-        h.title = title
+            logging.info('  New: {h.id_} - {h.area:>6.2f}平 - {p:>5.1f}万 - {h.title}'.format(h=h, p=total_price))
+        else:
+            h.title = title
+            logging.info('  Upd: {h.id_} - {h.area:>6.2f}平 - {p:>5.1f}万 - {h.title}'.format(h=h, p=total_price))
 
         session.add(h)
 
@@ -94,9 +111,20 @@ def parse_lianjia(html, session):
         session.add(p)
 
 
+def parse_lianjia(html, session):
+    soup = Soup(html, 'lxml')
+    find_houses(soup, session)
+    return find_next_pages(soup)
+
+
 URLS = ( 
-        r'http://dl.lianjia.com/ershoufang/c1311042053238/',
-#       r'http://dl.lianjia.com/ershoufang/c1311043078176/',
+         (r'http://dl.lianjia.com/ershoufang/c1311042053299/', '学子园'),
+         (r'http://dl.lianjia.com/ershoufang/c1311042052472/', '老年公寓'),
+         (r'http://dl.lianjia.com/ershoufang/c1311042053230/', '学清园'),
+         (r'http://dl.lianjia.com/ershoufang/c1311042053235/', '知音园'),
+         (r'http://dl.lianjia.com/ershoufang/c1311042053231/', '双语学校'),
+         (r'http://dl.lianjia.com/ershoufang/c1311042053238/', '学院派'),
+         (r'http://dl.lianjia.com/ershoufang/c1311043078176/', '软景E居'),
         )
 
 
@@ -109,24 +137,33 @@ def test():
         session.close()
 
 
-def update_ershoufang(url):
+def update_ershoufang(url, session):
+    logging.info(' proc ' + url)
+    resp = requests.get(url)
+    return parse_lianjia(resp.content, session)
+
+
+def create_tables(engine):
+    Base.metadata.create_all(engine)
+
+def do_update(echo=False):
+    engine = create_engine('sqlite:///lianjia.db', echo=echo)
+    create_tables(engine)
+
+    Session = sessionmaker(bind=engine)
     session = Session()
 
-    resp = requests.get(url)
-    next_urls = parse_lianjia(resp.content(), session)
 
-    for url in next_urls:
-        resp = requests.get(url)
-        parse_lianjia(resp.content(), session)
+    for url, community in URLS:
+        logging.info('Updating ' + community)
+        next_urls = update_ershoufang(url, session)
+        for next_url in next_urls:
+            update_ershoufang(next_url, session)
 
     session.commit()
     session.close()
-
-
-
+    
 
 if __name__ == '__main__':
-    for url in URLS:
-        update_ershoufang(url)
-
+    do_update()
 
