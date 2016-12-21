@@ -1,17 +1,25 @@
 #qpy:3
 # -*- coding:utf-8 -*-
 
+from datetime import datetime
+import logging
+
 from bs4 import BeautifulSoup as Soup
+import requests
 
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, Float
+from sqlalchemy import Column, Integer, String, Float, Date
+from sqlalchemy import ForeignKey
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
+
+
+logging.basicConfig(level=logging.INFO)
+TODAY = datetime.now().date()
+
 
 engine = create_engine('sqlite:///lianjia.db', echo=True)
 Session = sessionmaker(bind=engine)
-session = Session()
-
 Base = declarative_base()
 
 
@@ -24,6 +32,8 @@ class House(Base):
     area = Column(Float, default=0.0)
     layout = Column(String, default='')
 
+    prices = relationship('Price')
+
 
     def __repr__(self):
         return "<House(id_='{h.id_}', community='{h.community}', title='{h.title}')>".format(h=self)
@@ -32,16 +42,28 @@ class House(Base):
         return '\n'.join('{}: {}'.format(k, v) for k, v in self.__dict__.items() if not k.startswith('_'))
             
 
-if not engine.has_table('houses'):
-    Base.metadata.create_all(engine)
-    
+class Price(Base):
+    __tablename__ = 'prices'
+    hid = Column(Integer, ForeignKey('houses.id_'), primary_key=True)
+    date = Column(Date, primary_key=True)
+    unit_price = Column(Float, default=0.0)
+    total_price = Column(Float, default=0.0)
 
-def parse_lianjia(html):
+    def __repr__(self):
+        return "<Price(hid='{p.hid}', date='{p.date}', unit_price={p.unit_price}, total_price={p.total_price}>".format(p=self)
+
+
+def create_tables():
+    Base.metadata.create_all(engine)
+
+create_tables()
+
+
+def parse_lianjia(html, session):
     soup = Soup(html, 'lxml')
 
     house_tags = soup.select('.sellListContent > li')
 
-    houses = []
     for htag in house_tags:
 
         title_tag = htag.find(class_='title')
@@ -60,15 +82,51 @@ def parse_lianjia(html):
             h = House(id_=id_, title=title, community=community, area=area, layout=layout)
         h.title = title
 
-        print(h)
-        houses.append(h)
+        session.add(h)
 
-    return houses
+        p = session.query(Price).filter(Price.hid == id_).filter(Price.date == TODAY).first()
+        if not p:
+            p = Price(hid=id_, date=TODAY, unit_price=unit_price, total_price=total_price)
+        else:
+            p.unit_price = unit_price
+            p.total_price = total_price
+
+        session.add(p)
+
+
+URLS = ( 
+        r'http://dl.lianjia.com/ershoufang/c1311042053238/',
+#       r'http://dl.lianjia.com/ershoufang/c1311043078176/',
+        )
+
+
+def test():
+    try:
+        session = Session()
+        parse_lianjia(open('test.html'), session)
+        session.commit()
+    finally:
+        session.close()
+
+
+def update_ershoufang(url):
+    session = Session()
+
+    resp = requests.get(url)
+    next_urls = parse_lianjia(resp.content(), session)
+
+    for url in next_urls:
+        resp = requests.get(url)
+        parse_lianjia(resp.content(), session)
+
+    session.commit()
+    session.close()
+
+
 
 
 if __name__ == '__main__':
-    session.add_all(parse_lianjia(open('test.html')))
-    session.commit()
-
+    for url in URLS:
+        update_ershoufang(url)
 
 
