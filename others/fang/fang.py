@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 #qpy:3
 # -*- coding:utf-8 -*-
 
@@ -15,7 +16,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, relationship
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(filename='fang.log', level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
 TODAY = datetime.now().date()
 
 
@@ -97,7 +99,7 @@ def find_houses(soup, session):
             logging.info('  New: {h.id_} - {h.area:>6.2f}平 - {p:>5.1f}万 - {h.title}'.format(h=h, p=total_price))
         else:
             h.title = title
-            logging.info('  Upd: {h.id_} - {h.area:>6.2f}平 - {p:>5.1f}万 - {h.title}'.format(h=h, p=total_price))
+            #logging.info('  Upd: {h.id_} - {h.area:>6.2f}平 - {p:>5.1f}万 - {h.title}'.format(h=h, p=total_price))
 
         session.add(h)
 
@@ -109,6 +111,8 @@ def find_houses(soup, session):
             p.total_price = total_price
 
         session.add(p)
+
+    logging.info(' Total: {}'.format(len(house_tags)))
 
 
 def parse_lianjia(html, session):
@@ -147,6 +151,7 @@ def create_tables(engine):
     Base.metadata.create_all(engine)
 
 def do_update(echo=False):
+    logging.info('#### {} ####'.format(datetime.now()))
     engine = create_engine('sqlite:///lianjia.db', echo=echo)
     create_tables(engine)
 
@@ -162,6 +167,7 @@ def do_update(echo=False):
 
     session.commit()
     session.close()
+    logging.info('\n')
     
 
 if __name__ == '__main__':
