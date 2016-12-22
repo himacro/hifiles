@@ -1,16 +1,17 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #qpy:3
 # -*- coding:utf-8 -*-
 
 from datetime import datetime
 import re
 import logging
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup as Soup
 import requests
 
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, Float, Date
+from sqlalchemy import Column, Integer, String, Float, Date, LargeBinary
 from sqlalchemy import ForeignKey
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, relationship
@@ -34,6 +35,7 @@ class House(Base):
     community = Column(String, default='')
     area = Column(Float, default=0.0)
     layout = Column(String, default='')
+    photo = Column(LargeBinary, default=b'')
 
     prices = relationship('Price')
 
@@ -92,6 +94,8 @@ def find_houses(soup, session):
         
         unit_price = float(htag.find(class_='unitPrice').get_text().strip()[2:-4])
         total_price = float(htag.find(class_='totalPrice').get_text().strip()[:-1])
+
+        
     
         h = session.query(House).filter(House.id_ == id_).first()
         if not h:
@@ -100,6 +104,16 @@ def find_houses(soup, session):
         else:
             h.title = title
             #logging.info('  Upd: {h.id_} - {h.area:>6.2f}平 - {p:>5.1f}万 - {h.title}'.format(h=h, p=total_price))
+
+        if not h.photo:
+            img_tag = htag.find('img')
+            if img_tag:
+                img_url = img_tag['data-original']
+            if img_url:
+                resp = requests.get(img_url)
+                if resp.status_code == requests.codes.ok:
+                    logging.info('  Save photo for {h.id_}'.format(h=h))
+                    h.photo = resp.content
 
         session.add(h)
 
@@ -129,7 +143,7 @@ URLS = (
          (r'http://dl.lianjia.com/ershoufang/c1311042053231/', '双语学校'),
          (r'http://dl.lianjia.com/ershoufang/c1311042053238/', '学院派'),
          (r'http://dl.lianjia.com/ershoufang/c1311043078176/', '软景E居'),
-        )
+       )
 
 
 def test():
