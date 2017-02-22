@@ -13,68 +13,81 @@ from prompt_toolkit.contrib.completers import WordCompleter
 from prompt_toolkit.completion import Completer, Completion
 
 
+CMD_PREFIX = '!'
+CMDS = ('update', 'exit')
+books = {}
+
 class MyCompleter(Completer):
 
-    def get_completions(self, document, complete_event):
+    def _parse(self, user_input):
 
-        self.document = document
+        self.user_input = user_input.lower()
 
-        def cmd_completions(cmd):
-            yield from (Completion(cmd, -len(document.text) + 1) for cmd in CMDS)
+        self.in_cmd = False
+        self.cmd = ''
+        self.args = []
+
+        if self.user_input.startswith(CMD_PREFIX):
+            self.in_cmd = True
+            tokens = self.user_input[1:].split()
+            if tokens:
+                self.cmd, *self.args = tokens
+
+        if self.user_input:
+            self.char_before_cursor = self.user_input[-1]
+
+    def _word_completions(self, part, words):
+        candidates = [word for word in words if word.startswith(part)]
+
+        if not candidates:
+            candidates = words
+
+        yield from (Completion(word, -len(word) + 1) for word in candidates)
 
 
-        def book_completions():
-            def match_book(words, book):
-                strings = ' '.join([book['title']] + book['tags']).lower()
-                for word in words:
-                    if word not in strings:
-                        return False
+    def _cmd_completions(self, word):
+        yield from self._word_completions(word, CMDS)
 
-                return True
 
-            ordered_books = sorted(zip(books.keys(), books.values()), key=lambda v: v[1]['title'])
-            for id_, book in ordered_books:
-                if match_book(args, book): 
-                    yield Completion('{} ({})({})'.format(book['title'], ' '.join(book['tags']), id_), -len(document.text))
-            
+    def _lib_completions(self, word):
+        LIBS = ('v2r2', 'v2r1', 'v1r13')
+        yield from self._word_completions(word, LIBS)
 
-        def library_completions(word):
-            LIBS = ('v2r2', 'v2r1', 'v1r13')
-            offset = -len(word) if word else 0
-            candidates = (lib for lib in LIBS if lib.startswith(word))
 
-            if not candidates:
-                candidates = LIBS
 
-            yield from (Completion(lib, offset) for lib in candidates)
+    def _book_completions(self, text):
+        def match_book(words, book):
+            strings = ' '.join([book['title']] + book['tags']).lower()
+            for word in words:
+                if word not in strings:
+                    return False
 
-        userinput = document.text.lower()
-        ends_with_space = True if userinput[-1] == ' ' else False
-        args = userinput.split()
-        CMDS = ('update', 'exit')
+            return True
 
-        if userinput.startswith('!'):
-            words = userinput[1:].split()
-            if words:
-                cmd, *args = words
+        words = text.split()
+        ordered_books = sorted(zip(books.keys(), books.values()), key=lambda v: v[1]['title'])
+        for id_, book in ordered_books:
+            if match_book(words, book): 
+                yield Completion('{} ({})({})'.format(book['title'], ' '.join(book['tags']), id_), -len(text))
+        
+
+    def get_completions(self, document, _):
+        self._parse(document.text)
+
+        if self.in_cmd:
+            if self.cmd in CMDS:
+                if self.cmd == 'update':
+                    if self.char_before_cursor == ' ':
+                        yield from self._lib_completions('')
+                    elif self.args:
+                        yield from self._lib_completions(self.args[-1])
+                    else:
+                        return
             else:
-                cmd, args = '', []
-            
-            if cmd not in CMDS:
-                yield from cmd_completions(cmd)
-            else:
-                if not userinput.endswith(' ') and not args:
-                    return
+                yield from self._cmd_completions(self.cmd)
 
-                if userinput.endswith(' '):
-                    last_word = ''
-                else:
-                    last_word = args[-1]
-
-                if cmd == 'update':
-                    yield from library_completions(last_word)
         else:
-            yield from book_completions()
+            yield from self._book_completions(self.user_input)
 
 
 def download_book(bookid, bookpath):
@@ -95,7 +108,7 @@ def open_book(bookid):
 
 def update_elements_and_features(zosver):
 
-    root = 'http://www-03.ibm.com/systems/z/os/zos/library/bkserv'
+    root = r'http://www-03.ibm.com/systems/z/os/zos/library/bkserv'
     if zosver.startswith('v1r'):
         zver = zosver[2:]
     else:
@@ -147,7 +160,7 @@ def update_index(libs):
         'share': update_share,
         }
     
-    for lib in libs:
+    for lib in set(libs.split()):
 
         print('Updating... ' + lib)
 
@@ -169,14 +182,14 @@ def run():
         if not text:
             continue
    
-        if text.startswith('!'):
+        if text.startswith(CMD_PREFIX):
             cmd, *parms = text[1:].split(maxsplit=1)
         
             if cmd == 'exit':
                 sys.exit(0)
 
             elif cmd == 'update':
-                update_index(parms)
+                update_index(parms[0])
 
             else:
                 print('Uknown command!')
@@ -189,11 +202,10 @@ def run():
 
 
 
-
-if __name__ == '__main__':
+def main():
+    global books
 
     index = 'index.json'
-
     try:
         with open(index) as f:
             books = json.load(f)
@@ -201,3 +213,7 @@ if __name__ == '__main__':
         books = {}
 
     run()
+
+
+if __name__ == '__main__':
+    main()
