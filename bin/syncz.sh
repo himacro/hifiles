@@ -31,11 +31,15 @@ init() {
 
     HISTORY=$DATADIR/'history'
 
+
 }
 
 search_git_dir(){
     GITDIR=$($GIT rev-parse --git-dir 2>/dev/null)
-    [ "$GITDIR" ] || echo "Fatal: Not in a git repository" || exit 1
+    if [ -z "$GITDIR" ]; then
+        echo "Fatal: Not in a git repository" 
+        exit 1
+    fi
     [ "$GITDIR" = ".git" ] && GITDIR=${WORKDIR}/$GITDIR
 }
 
@@ -178,6 +182,7 @@ usage() {
     echo "    syncz [reset]"
 }
 
+
 init
 if [ $# -gt 1 ]; then
     usage
@@ -185,6 +190,8 @@ elif [ $# -eq 0 ]; then
     check_changes 
     show_changes
     sync_changes
+elif [ $1 = 'set' ]; then
+    clean_changes
 elif [ $1 = 'reset' ]; then
     reset
 else
