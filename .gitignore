@@ -2,3 +2,4 @@
 tags
 *.cache
 .ropeproject
+dotfiles/neovim/share
