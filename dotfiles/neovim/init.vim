@@ -5,38 +5,41 @@ else
     let s:plugins_dir = '~/.local/share/nvim/plugged'
 endif
 
+ 
 call plug#begin(s:plugins_dir)
+    let s:config_plugins = []
+    let s:plugin_entries = {}
     function! s:plug2(...)
         call call('plug#', a:000)
-        if a:0 == 2 && has_key(a:2, 'entry') | let s:plugin_vims[split(a:1, '/')[-1]] = a:2['entry'] | endif
+        let l:repo_name = split(a:1, '/')[-1]
+        if a:0 == 2 && has_key(a:2, 'entry') 
+            let s:plugin_entries[l:repo_name] = a:2['entry'] 
+        endif
+        call add(s:config_plugins, l:repo_name)
     endfunction
 
-    let s:plugin_vims = {}
     command! -nargs=+ -bar Plug call <SID>plug2(<args>)
 
     Plug 'junegunn/seoul256.vim'
-    Plug 'editorconfig/editorconfig-vim'
+    Plug 'editorconfig/editorconfig-vim', {'entry': 'editorconfig'}
 
     if has('nvim')
-        Plug 'neoclide/coc.nvim', {'branch': 'release'}
-        Plug 'jsfaint/gen_tags.vim'
+        Plug 'neoclide/coc.nvim', {'branch': 'release', 'entry': 'coc'}
+        Plug 'jsfaint/gen_tags.vim' , {'entry': 'gen_tags'}
     else
         if has('win32')
             Plug 'Yggdroot/LeaderF', {'do': '.\install.bat', 'entry': 'leaderf' } 
         else
             Plug 'Yggdroot/LeaderF', {'do': './install.sh', 'entry': 'leaderf' } 
         endif
+
+        Plug 'davidhalter/jedi-vim', {'entry': 'jedi'}
     endif
 call plug#end()
 
 
 " My setting
 let g:colorschemes = ['seoul256', 'desert']
-if has('nvim')
-    let g:config_plugins = ['gen_tags', 'coc']
-else
-    let g:config_plugins = ['LeaderF']
-endif
 
 
 " Common Settings
@@ -49,8 +52,6 @@ set smartindent
 set ignorecase
 set number
 set hidden
-
-"" Plugins
 
 "" Keybind
 tnoremap <Esc> <C-\><C-n>
@@ -78,9 +79,14 @@ command! -nargs=0 Vimrc :e! $MYVIMRC
 
 " Assist functions
 function! s:launch() 
-    let g:rtp_copy = &rtp
+    call s:config_plugins()
     call s:set_colorscheme()
-    call s:do_config()
+endfunction
+
+function! s:config_plugins()
+    for l:plug in s:config_plugins
+        call s:config(l:plug)
+    endfor
 endfunction
 
 function! s:set_colorscheme() 
@@ -98,27 +104,25 @@ function! s:set_colorscheme()
     endfor
 endfunction
 
-function! s:do_config()
-    for l:plug in g:config_plugins
-        call s:config(l:plug)
-    endfor
+function! s:config(plugin)
+    let l:entry = s:has_plugin(a:plugin)
+    if len(l:entry) && exists("*s:config__" . l:entry)
+        call call("s:config__" . l:entry, [])
+"        echo "config__" . l:entry . "()"
+    endif
 endfunction
 
 function! s:has_plugin(plug)
-    let l:plugin_vim = get(s:plugin_vims, a:plug, a:plug)
-    if !empty(globpath(&rtp, 'plugin/' . l:plugin_vim . '.vim'))
-        return 1
+    let l:plugin_entry = get(s:plugin_entries, a:plug, a:plug)
+    if !empty(globpath(&rtp, 'plugin/' . l:plugin_entry . '.vim'))
+        return l:plugin_entry
     endif
 
-    return 0
-endfunction
-
-function! s:config(plugin)
-    if s:has_plugin(a:plugin) 
-        call call("s:config__" . a:plugin, [])
-    else
-        echo a:plugin . ' not found'
+    if !empty(globpath(&rtp, 'colors/' . l:plugin_entry . '.vim'))
+        return l:plugin_entry
     endif
+
+    return ""
 endfunction
 
 function! s:has_colorscheme(cs)
@@ -132,7 +136,6 @@ endfunction
 function! HasPlugin(plug)
     return s:has_plugin(a:plug)
 endfunction
-
 
 
 " gen_tags
@@ -153,7 +156,7 @@ function! s:config__gen_tags()
 endfunction
 
 " LeaderF
-function! s:config__LeaderF() 
+function! s:config__leaderf() 
     let g:Lf_ShortcutF = '<C-P>'
     let g:Lf_WildIgnore = {
                 \ 'dir': ['.git', '.svn', '.hg', '.cvs'],
@@ -162,6 +165,15 @@ function! s:config__LeaderF()
     let g:Lf_DefaultExternalTool = 'rg'
     let g:Lf_UseVersionControlTool = 0
 endfunction
+
+" jedi-vim
+function! s:config__jedi()
+    let g:jedi#show_call_signatures = 2
+    let g:jedi#show_call_signatures_modes = 'ni'
+    autocmd FileType python set splitbelow
+    autocmd FileType python set completeopt=menuone,longest
+endfunction
+
 
 " coc
 function! s:config__coc()
